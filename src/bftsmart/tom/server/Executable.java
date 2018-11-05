@@ -38,4 +38,6 @@ public interface Executable {
      * @return the reply for the request issued by the client
      */
     public byte[] executeUnordered(byte[] command, MessageContext msgCtx);
+    
+    public byte[] takeCheckpointHash();
 }

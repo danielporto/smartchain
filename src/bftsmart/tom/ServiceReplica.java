@@ -29,6 +29,7 @@ import bftsmart.consensus.roles.Proposer;
 import bftsmart.reconfiguration.ReconfigureReply;
 import bftsmart.reconfiguration.ServerViewController;
 import bftsmart.reconfiguration.VMMessage;
+import bftsmart.statemanagement.ApplicationState;
 import bftsmart.tom.core.ReplyManager;
 import bftsmart.tom.core.TOMLayer;
 import bftsmart.tom.core.messages.TOMMessage;
@@ -46,6 +47,10 @@ import bftsmart.tom.util.KeyLoader;
 import bftsmart.tom.util.ShutdownHookThread;
 import bftsmart.tom.util.TOMUtil;
 import java.security.Provider;
+import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.logging.Level;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,6 +83,8 @@ public class ServiceReplica {
     private ReplicaContext replicaCtx = null;
     private Replier replier = null;
     private RequestVerifier verifier = null;
+    
+    private BlockingQueue<Map.Entry<Integer,byte[]>> queue;
 
     /**
      * Constructor
@@ -447,6 +454,36 @@ public class ServiceReplica {
             //DEBUG
             logger.debug("BATCHEXECUTOR END");
         }
+        
+        for (int cid : consId) {
+            
+            if (cid % SVController.getStaticConf().getCheckpointPeriod() == 0) {
+                
+                Map.Entry<Integer, byte[]> element = new Map.Entry<Integer, byte[]>() {
+                    @Override
+                    public Integer getKey() {
+                        
+                        return cid;
+                    }
+
+                    @Override
+                    public byte[] getValue() {
+                        return executor.takeCheckpointHash();
+                    }
+
+                    @Override
+                    public byte[] setValue(byte[] value) {
+                        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+                    }
+                };
+                
+                try {
+                    queue.put(element);
+                } catch (InterruptedException ex) {
+                    logger.error("Error while getting checkpoint for CID " + cid, ex);
+                }
+            }
+        }
     }
 
     /**
@@ -467,7 +504,9 @@ public class ServiceReplica {
         // Assemble the total order messaging layer
         MessageFactory messageFactory = new MessageFactory(id);
 
-        Acceptor acceptor = new Acceptor(cs, messageFactory, SVController);
+        queue = new LinkedBlockingQueue<>();
+        
+        Acceptor acceptor = new Acceptor(cs, messageFactory, SVController, queue);
         cs.setAcceptor(acceptor);
 
         Proposer proposer = new Proposer(cs, messageFactory, SVController);

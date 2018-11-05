@@ -21,7 +21,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
 import bftsmart.communication.ServerCommunicationSystem;
-import bftsmart.communication.server.ServerConnection;
 import bftsmart.consensus.Consensus;
 import bftsmart.tom.core.ExecutionManager;
 import bftsmart.consensus.Epoch;
@@ -38,8 +37,11 @@ import java.io.ObjectOutputStream;
 import java.security.PrivateKey;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Map;
+import java.util.concurrent.BlockingQueue;
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;
+import org.apache.commons.codec.binary.Base64;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,18 +65,21 @@ public final class Acceptor {
     private ServerViewController controller;
     //private Cipher cipher;
     private Mac mac;
-
+    
+    private BlockingQueue<Map.Entry<Integer,byte[]>> queue;
+    
     /**
      * Creates a new instance of Acceptor.
      * @param communication Replicas communication system
      * @param factory Message factory for PaW messages
      * @param controller
      */
-    public Acceptor(ServerCommunicationSystem communication, MessageFactory factory, ServerViewController controller) {
+    public Acceptor(ServerCommunicationSystem communication, MessageFactory factory, ServerViewController controller, BlockingQueue<Map.Entry<Integer,byte[]>> queue) {
         this.communication = communication;
         this.me = controller.getStaticConf().getProcessId();
         this.factory = factory;
         this.controller = controller;
+        this.queue = queue;
         try {
             this.mac = TOMUtil.getMacFactory();
         } catch (NoSuchAlgorithmException /*| NoSuchPaddingException*/ ex) {
@@ -287,6 +292,31 @@ public final class Acceptor {
                         
                 ConsensusMessage cm = factory.createAccept(cid, epoch.getTimestamp(), value);
 
+                byte[] checkpointHash = null;
+                
+                if ((cid - 1) % controller.getStaticConf().getCheckpointPeriod() == 0) {
+                    
+                    logger.debug("Waiting for checkpoint hash for CID {}", (cid-1));
+                    
+                    try {
+                        while(true) {
+                            Map.Entry<Integer, byte[]> element = queue.take();
+                            if (element.getKey() == (cid - 1)) {
+                                
+                                checkpointHash = element.getValue();
+                                
+                                logger.info("Obtained checkpoint hash for CID {} with content {}", (cid-1), Base64.encodeBase64String(checkpointHash));
+                                
+                                break;
+                            }
+                        } 
+                    } catch (InterruptedException ex) {
+                        logger.error("Error while wating for checkpoint hash for CID "+cid, ex);
+                    }
+                }
+                
+                cm.setCheckpointHash(checkpointHash);
+                
                 // Create a cryptographic proof for this ACCEPT message
                 logger.debug("Creating cryptographic proof for my ACCEPT message from consensus " + cid);
                 insertProof(cm, epoch);

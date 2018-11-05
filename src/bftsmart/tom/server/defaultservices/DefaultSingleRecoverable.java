@@ -309,6 +309,12 @@ public abstract class DefaultSingleRecoverable implements Recoverable, SingleExe
         }
     }
     
+    @Override
+    public byte[] takeCheckpointHash(){
+        
+        return computeHash(getSnapshot());
+    }
+    
     /**
      * Given a snapshot received from the state transfer protocol, install it
      * @param state The serialized snapshot
