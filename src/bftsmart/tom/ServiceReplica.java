@@ -45,10 +45,12 @@ import bftsmart.tom.server.defaultservices.DefaultReplier;
 import bftsmart.tom.util.KeyLoader;
 import bftsmart.tom.util.ShutdownHookThread;
 import bftsmart.tom.util.TOMUtil;
+import java.io.IOException;
 import java.security.Provider;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.logging.Level;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -453,7 +455,12 @@ public class ServiceReplica {
 
             int cid = msgContexts[0].getConsensusId();
             
-            lastBlockHash = TOMUtil.computeBlockHash(cid, lastBlockHash, batch);
+            try {
+                lastBlockHash = TOMUtil.computeBlockHash(cid, lastBlockHash, toBatch);
+            } catch (IOException ex) {
+                logger.error("Error while computing the hash for last block (Could not serialize transactions).", ex);
+            }
+            
             byte [] lastCheckpointHash = null;
 
             if (cid % SVController.getStaticConf().getCheckpointPeriod() == 0) {

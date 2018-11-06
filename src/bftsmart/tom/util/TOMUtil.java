@@ -29,8 +29,10 @@ import java.security.SignatureException;
 import java.util.Arrays;
 
 import bftsmart.reconfiguration.util.Configuration;
+import bftsmart.tom.core.messages.TOMMessage;
 import java.nio.ByteBuffer;
 import java.security.Security;
+import java.util.List;
 import java.util.Random;
 import javax.crypto.Mac;
 import javax.crypto.SecretKeyFactory;
@@ -257,23 +259,36 @@ public class TOMUtil {
         
     }
     
-    public static byte[] computeBlockHash(int number, byte[] lastBlockHash, byte[][] transactions) {
+    public static byte[] computeBlockHash(int number, byte[] lastBlockHash, List<TOMMessage> transactions) throws IOException {
+        
+        byte[][] serialized = new byte[transactions.size()][];
+        
+        for (int i = 0; i < transactions.size(); i++) {
+            
+            ByteArrayOutputStream bOut = new ByteArrayOutputStream(248);
+            ObjectOutputStream obj = new ObjectOutputStream(bOut);
+            obj.writeObject(transactions.get(i));
+            obj.flush();
+            bOut.flush();
+            
+            serialized[i] = bOut.toByteArray();
+        }
         
         int transSize = 0;
         
-        for (byte[] transaction : transactions) {
+        for (byte[] transaction : serialized) {
             transSize += transaction.length;
-
+            
         }
             
-        ByteBuffer buff = ByteBuffer.allocate((Integer.BYTES * 3) + lastBlockHash.length + transSize + (Integer.BYTES * transactions.length));
+        ByteBuffer buff = ByteBuffer.allocate((Integer.BYTES * 3) + lastBlockHash.length + transSize + (Integer.BYTES * serialized.length));
 
         buff.putInt(number);
         buff.putInt(lastBlockHash.length);
         buff.put(lastBlockHash);
-        buff.putInt(transactions.length);
+        buff.putInt(serialized.length);
 
-        for (byte[] transaction : transactions) {
+        for (byte[] transaction : serialized) {
 
             buff.putInt(transaction.length);
             buff.put(transaction);
