@@ -29,6 +29,7 @@ import java.security.SignatureException;
 import java.util.Arrays;
 
 import bftsmart.reconfiguration.util.Configuration;
+import java.nio.ByteBuffer;
 import java.security.Security;
 import java.util.Random;
 import javax.crypto.Mac;
@@ -254,5 +255,30 @@ public class TOMUtil {
 
         return new PBEKeySpec(password, salt, PBE_ITERATIONS, HASH_BYTE_SIZE);
         
+    }
+    
+    public static byte[] computeBlockHash(int number, byte[] lastBlockHash, byte[][] transactions) {
+        
+        int transSize = 0;
+        
+        for (byte[] transaction : transactions) {
+            transSize += transaction.length;
+
+        }
+            
+        ByteBuffer buff = ByteBuffer.allocate((Integer.BYTES * 3) + lastBlockHash.length + transSize + (Integer.BYTES * transactions.length));
+
+        buff.putInt(number);
+        buff.putInt(lastBlockHash.length);
+        buff.put(lastBlockHash);
+        buff.putInt(transactions.length);
+
+        for (byte[] transaction : transactions) {
+
+            buff.putInt(transaction.length);
+            buff.put(transaction);
+        }
+        
+        return computeHash(buff.array());
     }
 }

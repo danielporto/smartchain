@@ -66,7 +66,7 @@ public final class Acceptor {
     //private Cipher cipher;
     private Mac mac;
     
-    private BlockingQueue<Map.Entry<Integer,byte[]>> queue;
+    private BlockingQueue<Map.Entry<Integer,byte[][]>> queue;
     
     /**
      * Creates a new instance of Acceptor.
@@ -74,16 +74,40 @@ public final class Acceptor {
      * @param factory Message factory for PaW messages
      * @param controller
      */
-    public Acceptor(ServerCommunicationSystem communication, MessageFactory factory, ServerViewController controller, BlockingQueue<Map.Entry<Integer,byte[]>> queue) {
+    public Acceptor(ServerCommunicationSystem communication, MessageFactory factory, ServerViewController controller, BlockingQueue<Map.Entry<Integer,byte[][]>> queue) {
         this.communication = communication;
         this.me = controller.getStaticConf().getProcessId();
         this.factory = factory;
         this.controller = controller;
         this.queue = queue;
+        
+        //Putting an element in the queue to prevent the acceptor from blocking when attempting to fetch the hashes from the first execution
+        Map.Entry<Integer, byte[][]> element = new Map.Entry<Integer, byte[][]>() {
+                
+                @Override
+                public Integer getKey() {
+
+                    return -1;
+                }
+
+                @Override
+                public byte[][] getValue() {
+                    return new byte[][] {new byte[0], new byte[0]};
+                }
+
+                @Override
+                public byte[][] setValue(byte[][] value) {
+                    throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+                }
+            };
+
+            
         try {
             this.mac = TOMUtil.getMacFactory();
-        } catch (NoSuchAlgorithmException /*| NoSuchPaddingException*/ ex) {
-            logger.error("Failed to get MAC engine",ex);
+            this.queue.put(element);
+
+        } catch (InterruptedException | NoSuchAlgorithmException /*| NoSuchPaddingException*/ ex) {
+            logger.error("Failed to initialize Acceptor",ex);
         }
     }
 
@@ -292,35 +316,44 @@ public final class Acceptor {
                         
                 ConsensusMessage cm = factory.createAccept(cid, epoch.getTimestamp(), value);
 
+                byte[] blockHash = null;
                 byte[] checkpointHash = null;
                 
-                if ((cid - 1) % controller.getStaticConf().getCheckpointPeriod() == 0) {
-                    
-                    logger.debug("Waiting for checkpoint hash for CID {}", (cid-1));
-                    
-                    try {
-                        while(true) {
-                            Map.Entry<Integer, byte[]> element = queue.take();
-                            if (element.getKey() == (cid - 1)) {
-                                
-                                checkpointHash = element.getValue();
-                                
-                                logger.info("Obtained checkpoint hash for CID {} with content {}", (cid-1), Base64.encodeBase64String(checkpointHash));
-                                
-                                break;
+                logger.debug("Waiting for the hash of block #{}", (cid - 1));
+
+                try {
+                    while(true) {
+                        Map.Entry<Integer, byte[][]> element = queue.take();
+                        
+                        logger.debug("Fetched hashes for block #{}", element.getKey());
+                        
+                        if (element.getKey() == (cid - 1)) {
+
+                            blockHash = element.getValue()[0];
+                            if (((cid - 1) % controller.getStaticConf().getCheckpointPeriod() == 0) && (element.getKey() == (cid - 1))) {
+
+                                checkpointHash = element.getValue()[1];
+
+                                logger.debug("Obtained checkpoint hash for block #{} with content {}", (cid-1), Base64.encodeBase64String(checkpointHash));
+
                             }
-                        } 
-                    } catch (InterruptedException ex) {
-                        logger.error("Error while wating for checkpoint hash for CID "+cid, ex);
-                    }
+                            
+                            break;
+                        
+                        }
+                    } 
+                } catch (InterruptedException ex) {
+                    logger.error("Error while wating for checkpoint hash for CID "+cid, ex);
                 }
                 
                 cm.setCheckpointHash(checkpointHash);
+                cm.setLastBlockHash(blockHash);
                 
                 // Create a cryptographic proof for this ACCEPT message
                 logger.debug("Creating cryptographic proof for my ACCEPT message from consensus " + cid);
                 insertProof(cm, epoch);
                 
+                logger.debug("Sending ACCEPT message to the other acceptors");
                 int[] targets = this.controller.getCurrentViewOtherAcceptors();
                 communication.getServersConn().send(targets, cm, true);
                 
