@@ -45,7 +45,6 @@ import bftsmart.tom.server.defaultservices.DefaultReplier;
 import bftsmart.tom.util.KeyLoader;
 import bftsmart.tom.util.ShutdownHookThread;
 import bftsmart.tom.util.TOMUtil;
-import java.nio.ByteBuffer;
 import java.security.Provider;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;

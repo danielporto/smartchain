@@ -39,6 +39,9 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.logging.Level;
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;
 import org.apache.commons.codec.binary.Base64;
@@ -63,11 +66,12 @@ public final class Acceptor {
     private ServerCommunicationSystem communication; // Replicas comunication system
     private TOMLayer tomLayer; // TOM layer
     private ServerViewController controller;
-    //private Cipher cipher;
-    private Mac mac;
     
     private BlockingQueue<Map.Entry<Integer,byte[][]>> queue;
-    
+        
+    //thread pool used to paralelise creation of consensus proofs
+    private ExecutorService proofExecutor = null;
+
     /**
      * Creates a new instance of Acceptor.
      * @param communication Replicas communication system
@@ -100,15 +104,19 @@ public final class Acceptor {
                     throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
                 }
             };
-
             
         try {
-            this.mac = TOMUtil.getMacFactory();
             this.queue.put(element);
-
-        } catch (InterruptedException | NoSuchAlgorithmException /*| NoSuchPaddingException*/ ex) {
-            logger.error("Failed to initialize Acceptor",ex);
+        } catch (InterruptedException ex) {
+            logger.error("Could not insert element into queue", ex);
         }
+        
+        // use either the same number of Netty workers threads if specified in the configuration
+        // or use a many as the number of cores available
+        int nWorkers = this.controller.getStaticConf().getNumNettyWorkers();
+        nWorkers = nWorkers > 0 ? nWorkers : Runtime.getRuntime().availableProcessors();
+        this.proofExecutor = Executors.newWorkStealingPool(nWorkers);
+            
     }
 
     public MessageFactory getFactory() {
@@ -307,6 +315,7 @@ public final class Acceptor {
                 epoch.getConsensus().setQuorumWrites(value);
                 /*****************************************/
                 
+                //TODO: remove this, it causes a bug with the proof
                 epoch.setAccept(me, value);
 
                 if(epoch.getConsensus().getDecision().firstMessageProposed!=null) {
@@ -315,52 +324,57 @@ public final class Acceptor {
                 }
                         
                 ConsensusMessage cm = factory.createAccept(cid, epoch.getTimestamp(), value);
-
-                byte[] blockHash = null;
-                byte[] checkpointHash = null;
+                int[] targets = this.controller.getCurrentViewAcceptors();
                 
-                logger.debug("Waiting for the hash of block #{}", (cid - 1));
+                proofExecutor.submit(() -> {
+                    
+                    byte[] blockHash = null;
+                    byte[] checkpointHash = null;
+                
+                    logger.debug("Waiting for the hash of block #{}", (cid - 1));
 
-                try {
-                    while(true) {
-                        Map.Entry<Integer, byte[][]> element = queue.take();
-                        
-                        logger.debug("Fetched hashes for block #{}", element.getKey());
-                        
-                        if (element.getKey() == (cid - 1)) {
+                    try {
+                        while(true) {
+                            Map.Entry<Integer, byte[][]> element = queue.take();
 
-                            blockHash = element.getValue()[0];
-                            if (((cid - 1) % controller.getStaticConf().getCheckpointPeriod() == 0) && (element.getKey() == (cid - 1))) {
+                            logger.debug("Fetched hashes for block #{}", element.getKey());
 
-                                checkpointHash = element.getValue()[1];
+                            if (element.getKey() == (cid - 1)) {
 
-                                logger.debug("Obtained checkpoint hash for block #{} with content {}", (cid-1), Base64.encodeBase64String(checkpointHash));
+                                blockHash = element.getValue()[0];
+                                if (((cid - 1) % controller.getStaticConf().getCheckpointPeriod() == 0) && (element.getKey() == (cid - 1))) {
 
+                                    checkpointHash = element.getValue()[1];
+
+                                    logger.debug("Obtained checkpoint hash for block #{} with content {}", (cid-1), Base64.encodeBase64String(checkpointHash));
+
+                                }
+
+                                break;
+
+                            } else {
+                                
+                                logger.debug("Hashes are not for the block I want (want #{}, got #{}), punting it back in the queue", (cid - 1), element.getKey());
+                                queue.put(element);
                             }
-                            
-                            break;
-                        
-                        }
-                    } 
-                } catch (InterruptedException ex) {
-                    logger.error("Error while wating for checkpoint hash for CID "+cid, ex);
-                }
+                        } 
+                    } catch (InterruptedException ex) {
+                        logger.error("Error while wating for checkpoint hash for CID "+cid, ex);
+                    }
+
+                    cm.setCheckpointHash(checkpointHash);
+                    cm.setLastBlockHash(blockHash);
+
+                    // Create a cryptographic proof for this ACCEPT message
+                    logger.debug("Creating cryptographic proof for my ACCEPT message from consensus " + cid);
+                    insertProof(cm, epoch.deserializedPropValue);
+
+                    logger.debug("Sending ACCEPT message to the other acceptors");
+                    communication.getServersConn().send(targets, cm, true);
+
+
+                });
                 
-                cm.setCheckpointHash(checkpointHash);
-                cm.setLastBlockHash(blockHash);
-                
-                // Create a cryptographic proof for this ACCEPT message
-                logger.debug("Creating cryptographic proof for my ACCEPT message from consensus " + cid);
-                insertProof(cm, epoch);
-                
-                logger.debug("Sending ACCEPT message to the other acceptors");
-                int[] targets = this.controller.getCurrentViewOtherAcceptors();
-                communication.getServersConn().send(targets, cm, true);
-                
-                //communication.send(this.reconfManager.getCurrentViewOtherAcceptors(),
-                        //factory.createStrong(cid, epoch.getNumber(), value));
-                epoch.addToProof(cm);
-                computeAccept(cid, epoch, value);
             }
         }
     }
@@ -374,10 +388,13 @@ public final class Acceptor {
      * @param cm The consensus message to which the proof shall be set
      * @param epoch The epoch during in which the consensus message was created
      */
-    private void insertProof(ConsensusMessage cm, Epoch epoch) {
+    private void insertProof(ConsensusMessage cm, TOMMessage[] msgs) {
         ByteArrayOutputStream bOut = new ByteArrayOutputStream(248);
         try {
-            new ObjectOutputStream(bOut).writeObject(cm);
+            ObjectOutputStream obj = new ObjectOutputStream(bOut);
+            obj.writeObject(cm);
+            obj.flush();
+            bOut.flush();
         } catch (IOException ex) {
             logger.error("Failed to serialize consensus message",ex);
         }
@@ -385,7 +402,6 @@ public final class Acceptor {
         byte[] data = bOut.toByteArray();
 
         // check if consensus contains reconfiguration request
-        TOMMessage[] msgs = epoch.deserializedPropValue;
         boolean hasReconf = false;
 
         if (!controller.getStaticConf().getProofType().equalsIgnoreCase("signatures")) {
@@ -413,6 +429,17 @@ public final class Acceptor {
 
         } else { //... otherwise, we must use MAC vectores
             
+            Mac mac = null;
+            
+            try {
+            
+                mac = TOMUtil.getMacFactory();
+            
+            } catch (NoSuchAlgorithmException ex) {
+                logger.error("Failed to create MAC engine", ex);
+                return;
+            }
+            
             int[] processes = this.controller.getCurrentViewAcceptors();
 
             HashMap<Integer, byte[]> macVector = new HashMap<>();
@@ -434,8 +461,8 @@ public final class Acceptor {
                                             // recovered after a crash, but it still did not concluded
                                             // the diffie helman protocol. Not an elegant solution,
                                             // but for now it will do
-                    this.mac.init(key);
-                    macVector.put(id, this.mac.doFinal(data));
+                    mac.init(key);
+                    macVector.put(id, mac.doFinal(data));
                 } catch (InterruptedException ex) {
                     
                     logger.error("Interruption while sleeping", ex);
