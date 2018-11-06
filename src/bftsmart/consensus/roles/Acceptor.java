@@ -228,7 +228,7 @@ public final class Acceptor {
             }
             epoch.deserializedPropValue = tomLayer.checkProposedValue(value, true);
 
-            if (epoch.deserializedPropValue != null && !epoch.isWriteSetted(me)) {
+            if (epoch.deserializedPropValue != null && !epoch.isWriteSent()) {
                 if(epoch.getConsensus().getDecision().firstMessageProposed == null) {
                     epoch.getConsensus().getDecision().firstMessageProposed = epoch.deserializedPropValue[0];
                 }
@@ -247,6 +247,7 @@ public final class Acceptor {
                             factory.createWrite(cid, epoch.getTimestamp(), epoch.propValueHash));
 
                     logger.debug("WRITE sent for " + cid);
+                    epoch.writeSent();
                 
                     computeWrite(cid, epoch, epoch.propValueHash);
                 
@@ -263,7 +264,8 @@ public final class Acceptor {
 
                         communication.send(this.controller.getCurrentViewOtherAcceptors(),
  	                    factory.createAccept(cid, epoch.getTimestamp(), epoch.propValueHash));
-
+                        
+                        epoch.acceptSent();
                         computeAccept(cid, epoch, epoch.propValueHash);
                 }
                 executionManager.processOutOfContext(epoch.getConsensus());
@@ -306,7 +308,7 @@ public final class Acceptor {
 
         if (writeAccepted > controller.getQuorum() && Arrays.equals(value, epoch.propValueHash)) {
                         
-            if (!epoch.isAcceptSetted(me)) {
+            if (!epoch.isAcceptSent()) {
                 
                 logger.debug("Sending WRITE for " + cid);
 
@@ -314,9 +316,6 @@ public final class Acceptor {
                 logger.debug("Setting consensus " + cid + " QuorumWrite tiemstamp to " + epoch.getConsensus().getEts() + " and value " + Arrays.toString(value));
                 epoch.getConsensus().setQuorumWrites(value);
                 /*****************************************/
-                
-                //TODO: remove this, it causes a bug with the proof
-                epoch.setAccept(me, value);
 
                 if(epoch.getConsensus().getDecision().firstMessageProposed!=null) {
 
@@ -325,7 +324,8 @@ public final class Acceptor {
                         
                 ConsensusMessage cm = factory.createAccept(cid, epoch.getTimestamp(), value);
                 int[] targets = this.controller.getCurrentViewAcceptors();
-                
+                epoch.acceptSent();
+
                 proofExecutor.submit(() -> {
                     
                     byte[] blockHash = null;
