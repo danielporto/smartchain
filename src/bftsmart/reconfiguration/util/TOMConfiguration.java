@@ -178,12 +178,14 @@ public class TOMConfiguration extends Configuration {
                 useMACs = Integer.parseInt(s);
             }
 
-            s = (String) configs.remove("system.communication.useSignatures");
+            //Force this codebase to always generate signatures for client requests
+            useSignatures = 1;
+            /*s = (String) configs.remove("system.communication.useSignatures");
             if (s == null) {
                 useSignatures = 0;
             } else {
                 useSignatures = Integer.parseInt(s);
-            }
+            }*/
 
             s = (String) configs.remove("system.totalordermulticast.state_transfer");
             if (s == null) {
@@ -330,12 +332,14 @@ public class TOMConfiguration extends Configuration {
                 bindAddress = s;
             }
             
-            s = (String) configs.remove("system.samebatchsize");
-            if (s != null) {
-                    sameBatchSize = Boolean.parseBoolean(s);
-            } else {
-                    sameBatchSize = false;
-            }
+            //Force this codebase to always deliver to the application a batch with the same size across all replicas
+            sameBatchSize = true;
+            //s = (String) configs.remove("system.samebatchsize");
+            //if (s != null) {
+            //        sameBatchSize = Boolean.parseBoolean(s);
+            //} else {
+            //        sameBatchSize = false;
+            //}
             
         } catch (Exception e) {
             logger.error("Could not parse system configuration file",e);

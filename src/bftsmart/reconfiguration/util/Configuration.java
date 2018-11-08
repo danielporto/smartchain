@@ -188,12 +188,13 @@ public class Configuration {
                 DH_G = new BigInteger(s);
             }
             
-            s = (String) configs.remove("system.totalordermulticast.prooftype");
-            if(s == null && !s.equalsIgnoreCase("macvector") && !s.equalsIgnoreCase("signatures")){
+            //force this codebase to only use a consensus proof comprised of signatures
+            //s = (String) configs.remove("system.totalordermulticast.prooftype");
+            //if(s == null && !s.equalsIgnoreCase("macvector") && !s.equalsIgnoreCase("signatures")){
                 proofType = "signatures";
-            }else{
-                proofType = s;
-            }
+            //}else{
+            //    proofType = s;
+            //}
             
             if (keyLoader == null) keyLoader = new RSAKeyLoader(processId, configHome, defaultKeys, signatureAlgorithm);
             
