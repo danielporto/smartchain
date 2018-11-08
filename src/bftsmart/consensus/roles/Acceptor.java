@@ -254,7 +254,7 @@ public final class Acceptor {
                     logger.debug("WRITE computed for " + cid);
                 
                 } else {
-                 	epoch.setAccept(me, epoch.propValueHash);
+                 	epoch.setAccept(me, epoch.propValueHash, null);
                  	epoch.getConsensus().getDecision().firstMessageProposed.writeSentTime = System.nanoTime();
                         epoch.getConsensus().getDecision().firstMessageProposed.acceptSentTime = System.nanoTime();
                  	/**** LEADER CHANGE CODE! ******/
@@ -266,7 +266,7 @@ public final class Acceptor {
  	                    factory.createAccept(cid, epoch.getTimestamp(), epoch.propValueHash));
                         
                         epoch.acceptSent();
-                        computeAccept(cid, epoch, epoch.propValueHash);
+                        computeAccept(cid, epoch, epoch.propValueHash, null);
                 }
                 executionManager.processOutOfContext(epoch.getConsensus());
                 
@@ -577,10 +577,10 @@ public final class Acceptor {
     private void acceptReceived(Epoch epoch, ConsensusMessage msg) {
         int cid = epoch.getConsensus().getId();
         logger.debug("ACCEPT from " + msg.getSender() + " for consensus " + cid);
-        epoch.setAccept(msg.getSender(), msg.getValue());
+        epoch.setAccept(msg.getSender(), msg.getValue(), msg.getCheckpointHash());
         epoch.addToProof(msg);
 
-        computeAccept(cid, epoch, msg.getValue());
+        computeAccept(cid, epoch, msg.getValue(), msg.getCheckpointHash());
     }
 
     /**
@@ -589,11 +589,11 @@ public final class Acceptor {
      * @param epoch Epoch of the receives message
      * @param value Value sent in the message
      */
-    private void computeAccept(int cid, Epoch epoch, byte[] value) {
-        logger.debug("I have " + epoch.countAccept(value) +
+    private void computeAccept(int cid, Epoch epoch, byte[] value, byte[] checkpoint) {
+        logger.debug("I have " + epoch.countAccept(value, checkpoint) +
                 " ACCEPTs for " + cid + "," + epoch.getTimestamp());
 
-        if (epoch.countAccept(value) > controller.getQuorum() && !epoch.getConsensus().isDecided()) {
+        if (epoch.countAccept(value, checkpoint) > controller.getQuorum() && !epoch.getConsensus().isDecided()) {
             logger.debug("Deciding consensus " + cid);
             decide(epoch);
         }
