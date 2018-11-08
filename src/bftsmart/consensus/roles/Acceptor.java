@@ -321,64 +321,102 @@ public final class Acceptor {
 
                         epoch.getConsensus().getDecision().firstMessageProposed.acceptSentTime = System.nanoTime();
                 }
-                        
-                ConsensusMessage cm = factory.createAccept(cid, epoch.getTimestamp(), value);
+                
+                ConsensusMessage cm = epoch.fetchAccept();
                 int[] targets = this.controller.getCurrentViewAcceptors();
                 epoch.acceptSent();
-
-                proofExecutor.submit(() -> {
-                    
-                    byte[] blockHash = null;
-                    byte[] checkpointHash = null;
                 
-                    logger.debug("Waiting for the hash of block #{}", (cid - 1));
+                if (Arrays.equals(cm.getValue(), value)) { //make sure the ACCEPT message generated upon receiving the PROPOSE message
+                                                           //still matches the value that ended up being written...
 
-                    try {
-                        while(true) {
-                            Map.Entry<Integer, byte[][]> element = queue.take();
+                    logger.debug("Speculative ACCEPT message for consensus {} matches the written value, sending it to the other replicas", cid);
 
-                            logger.debug("Fetched hashes for block #{}", element.getKey());
-
-                            if (element.getKey() == (cid - 1)) {
-
-                                blockHash = element.getValue()[0];
-                                if (((cid - 1) % controller.getStaticConf().getCheckpointPeriod() == 0) && (element.getKey() == (cid - 1))) {
-
-                                    checkpointHash = element.getValue()[1];
-
-                                    logger.debug("Obtained checkpoint hash for block #{} with content {}", (cid-1), Base64.encodeBase64String(checkpointHash));
-
-                                }
-
-                                break;
-
-                            } else {
-                                
-                                logger.debug("Hashes are not for the block I want (want #{}, got #{}), punting it back in the queue", (cid - 1), element.getKey());
-                                queue.put(element);
-                            }
-                        } 
-                    } catch (InterruptedException ex) {
-                        logger.error("Error while wating for checkpoint hash for CID "+cid, ex);
-                    }
-
-                    cm.setCheckpointHash(checkpointHash);
-                    cm.setLastBlockHash(blockHash);
-
-                    // Create a cryptographic proof for this ACCEPT message
-                    logger.debug("Creating cryptographic proof for my ACCEPT message from consensus " + cid);
-                    insertProof(cm, epoch.deserializedPropValue);
-
-                    logger.debug("Sending ACCEPT message to the other acceptors");
                     communication.getServersConn().send(targets, cm, true);
+                    
+                } else { //... and if not, create the ACCEPT message again (with the correct value), and send it
+                    
+                    ConsensusMessage correctAccept = factory.createAccept(cid, epoch.getTimestamp(), value);
+                    correctAccept.setCheckpointHash(cm.getCheckpointHash());
+                    correctAccept.setLastBlockHash(cm.getlastBlockHash());
 
+                    proofExecutor.submit(() -> {
+                        
+                        // Create a cryptographic proof for this ACCEPT message
+                        logger.debug("Creating cryptographic proof for the correct ACCEPT message from consensus " + cid);
+                        insertProof(correctAccept, epoch.deserializedPropValue);
 
-                });
+                        communication.getServersConn().send(targets, correctAccept, true);
+
+                    }); 
+                }
                 
             }
+            
+        } else if (!epoch.isAcceptCreated()) { //start creating the ACCEPT message and its respective proof ASAP, to increase performance.
+                                               //since this is done after a PROPOSE message is received, this is done speculatively, hence
+                                               //the value must be verified before sending the ACCEPT message to the other replicas
+            
+            ConsensusMessage cm = factory.createAccept(cid, epoch.getTimestamp(), value);
+            epoch.acceptCreated();
+
+            proofExecutor.submit(() -> {
+                
+                try {
+                    byte[][] hashes = fetchHashes(cid);
+                    
+                    // Create a cryptographic proof for this ACCEPT message
+                    logger.debug("Creating cryptographic proof for speculative ACCEPT message from consensus " + cid);
+                    
+                    cm.setCheckpointHash(hashes[0]);
+                    cm.setLastBlockHash(hashes[1]);
+                    
+                    insertProof(cm, epoch.deserializedPropValue);
+
+                    epoch.setAcceptMsg(cm);
+                } catch (InterruptedException ex) {
+                    logger.error("Error while wating for hashes for CID "+cid, ex);
+                }
+
+            });            
         }
     }
 
+    
+    private byte[][] fetchHashes(int cid) throws InterruptedException {
+        
+        byte[] blockHash = null;
+        byte[] checkpointHash = null;
+        
+        logger.debug("Waiting for the hash of block #{}", (cid - 1));
+        
+        while(true) {
+            Map.Entry<Integer, byte[][]> element = queue.take();
+
+            logger.debug("Fetched hashes for block #{}", element.getKey());
+
+            if (element.getKey() == (cid - 1)) {
+
+                blockHash = element.getValue()[0];
+                if (((cid - 1) % controller.getStaticConf().getCheckpointPeriod() == 0) && (element.getKey() == (cid - 1))) {
+
+                    checkpointHash = element.getValue()[1];
+
+                    logger.debug("Obtained checkpoint hash for block #{} with content {}", (cid-1), Base64.encodeBase64String(checkpointHash));
+
+                }
+
+                break;
+
+            } else {
+
+                logger.debug("Hashes are not for the block I want (want #{}, got #{}), punting it back in the queue", (cid - 1), element.getKey());
+                queue.put(element);
+            }
+        }
+        
+        return new byte[][]{checkpointHash, blockHash};
+    }
+    
     /**
      * Create a cryptographic proof for a consensus message
      * 
