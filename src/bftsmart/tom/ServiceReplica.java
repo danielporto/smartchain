@@ -84,7 +84,7 @@ public class ServiceReplica {
     private Replier replier = null;
     private RequestVerifier verifier = null;
     
-    private byte[] lastBlockHash = new byte[0];
+    //private byte[] lastBlockHash = new byte[0];
     private BlockingQueue<Map.Entry<Integer,byte[][]>> queue;
 
     /**
@@ -455,11 +455,11 @@ public class ServiceReplica {
 
             int cid = msgContexts[0].getConsensusId();
             
-            try {
+            /*try {
                 lastBlockHash = TOMUtil.computeBlockHash(cid, lastBlockHash, toBatch);
             } catch (IOException ex) {
                 logger.error("Error while computing the hash for last block (Could not serialize transactions).", ex);
-            }
+            }*/
             
             byte [] lastCheckpointHash = null;
 
@@ -467,33 +467,35 @@ public class ServiceReplica {
                 
                 lastCheckpointHash = executor.takeCheckpointHash();
 
-            }
+            //}
             
-            final byte[][] value = new byte[][]{lastBlockHash, lastCheckpointHash};
-            
-            Map.Entry<Integer, byte[][]> element = new Map.Entry<Integer, byte[][]>() {
-                
-                @Override
-                public Integer getKey() {
+                //final byte[][] value = new byte[][]{lastBlockHash, lastCheckpointHash};
+                final byte[][] value = new byte[][]{null, lastCheckpointHash};
 
-                    return cid;
+                Map.Entry<Integer, byte[][]> element = new Map.Entry<Integer, byte[][]>() {
+
+                    @Override
+                    public Integer getKey() {
+
+                        return cid;
+                    }
+
+                    @Override
+                    public byte[][] getValue() {
+                        return value;
+                    }
+
+                    @Override
+                    public byte[][] setValue(byte[][] value) {
+                        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+                    }
+                };
+
+                try {
+                    queue.put(element);
+                } catch (InterruptedException ex) {
+                    logger.error("Error while getting checkpoint for CID " + cid, ex);
                 }
-
-                @Override
-                public byte[][] getValue() {
-                    return value;
-                }
-
-                @Override
-                public byte[][] setValue(byte[][] value) {
-                    throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-                }
-            };
-
-            try {
-                queue.put(element);
-            } catch (InterruptedException ex) {
-                logger.error("Error while getting checkpoint for CID " + cid, ex);
             }
             
             logger.debug("BATCHEXECUTOR END");

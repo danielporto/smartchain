@@ -361,27 +361,30 @@ public final class Acceptor {
 
             proofExecutor.submit(() -> {
                 
-                try {
-                    byte[][] hashes = fetchHashes(cid);
+                //try {
+                
+                    //byte[][] hashes = fetchHashes(cid);
+                    byte[] hash = fetchHash(cid);
                     
                     // Create a cryptographic proof for this ACCEPT message
                     logger.debug("Creating cryptographic proof for speculative ACCEPT message from consensus " + cid);
                     
-                    cm.setCheckpointHash(hashes[0]);
-                    cm.setLastBlockHash(hashes[1]);
+                    cm.setCheckpointHash(hash);
+                    //cm.setLastBlockHash(hashes[1]);
                     
                     insertProof(cm, epoch.deserializedPropValue);
 
                     epoch.setAcceptMsg(cm);
-                } catch (InterruptedException ex) {
-                    logger.error("Error while wating for hashes for CID "+cid, ex);
-                }
+                    
+                //} catch (InterruptedException ex) {
+                //    logger.error("Error while wating for hashes for CID "+cid, ex);
+                //}
 
             });            
         }
     }
 
-    
+    //not used, at least for now
     private byte[][] fetchHashes(int cid) throws InterruptedException {
         
         byte[] blockHash = null;
@@ -415,6 +418,56 @@ public final class Acceptor {
         }
         
         return new byte[][]{checkpointHash, blockHash};
+    }
+    
+    private byte[] fetchHash(int cid) {
+        
+        byte[] checkpointHash = null;
+            
+        if ((cid - 1) % controller.getStaticConf().getCheckpointPeriod() == 0) {
+        
+            logger.debug("Waiting for the checkpoint hash of block #{}", (cid - 1));
+
+            while(true) {
+                
+                Map.Entry<Integer, byte[][]> element;
+                try {
+                    element = queue.take();
+                } catch (InterruptedException ex) {
+                    logger.error("Error while waiting for checkpoint hash from CID " + cid, ex);
+                    continue;
+                }
+
+                logger.debug("Fetched checkpoint hash for block #{}", element.getKey());
+            
+                        
+                if (element.getKey() == (cid - 1)) {
+
+                    checkpointHash = element.getValue()[1];
+
+                    logger.debug("Obtained checkpoint hash for block #{} with content {}", (cid-1), Base64.encodeBase64String(checkpointHash));
+
+                    break;
+
+                } else {
+
+                    logger.debug("Checkpoint hash is not for the block I want (want #{}, got #{}), punting it back in the queue", (cid - 1), element.getKey());
+                    
+                    while (true) {
+                        
+                        try {
+                            queue.put(element);
+                            break;
+                            
+                        } catch (InterruptedException ex) {
+                            logger.error("Error while putting checkpoint hash from CID " + cid + " back in the queue", ex);
+                        }
+                    }
+                }
+            }
+        }
+        
+        return checkpointHash;
     }
     
     /**
