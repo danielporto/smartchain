@@ -822,6 +822,8 @@ public class LCManager {
             
             ConsensusMessage cm = new ConsensusMessage(consMsg.getType(),consMsg.getNumber(),
                     consMsg.getEpoch(), consMsg.getSender(), consMsg.getValue());
+            
+            cm.setCheckpointHash(consMsg.getCheckpointHash());
 
             ByteArrayOutputStream bOut = new ByteArrayOutputStream(248);
             try {

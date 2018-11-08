@@ -41,7 +41,6 @@ import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Level;
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;
 import org.apache.commons.codec.binary.Base64;
@@ -358,7 +357,7 @@ public final class Acceptor {
             
             ConsensusMessage cm = factory.createAccept(cid, epoch.getTimestamp(), value);
             epoch.acceptCreated();
-
+            
             proofExecutor.submit(() -> {
                 
                 //try {
