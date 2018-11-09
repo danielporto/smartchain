@@ -18,6 +18,7 @@ package bftsmart.demo.microbenchmarks;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ServiceReplica;
 import bftsmart.tom.server.defaultservices.DefaultRecoverable;
+import bftsmart.tom.server.defaultservices.durability.DurabilityCoordinator;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayInputStream;
@@ -45,7 +46,7 @@ import java.util.logging.Logger;
 /**
  * Simple server that just acknowledge the reception of a request.
  */
-public final class ThroughputLatencyServer extends DefaultRecoverable{
+public final class ThroughputLatencyServer extends DurabilityCoordinator {
     
     private int interval;
     private byte[] reply;
@@ -121,7 +122,7 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
     }
     
     @Override
-    public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs, boolean fromConsensus) {
+    public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs) {
         
         batchSize.store(commands.length);
                 

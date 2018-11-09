@@ -434,6 +434,12 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
         executeBatch(operations, msgCtxs, true);
 
     }
+    
+    @Override
+    public byte[] takeCheckpointHash(){
+        
+        return computeHash(getSnapshot());
+    }
         
     /**
      * Given a snapshot received from the state transfer protocol, install it
