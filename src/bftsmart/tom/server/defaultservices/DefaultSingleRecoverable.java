@@ -310,7 +310,7 @@ public abstract class DefaultSingleRecoverable implements Recoverable, SingleExe
     }
     
     @Override
-    public byte[] takeCheckpointHash(){
+    public byte[] takeCheckpointHash(int cid){
         
         return computeHash(getSnapshot());
     }

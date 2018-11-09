@@ -431,7 +431,7 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
     }
     
     @Override
-    public byte[] takeCheckpointHash(){
+    public byte[] takeCheckpointHash(int cid){
         
         return computeHash(getSnapshot());
     }

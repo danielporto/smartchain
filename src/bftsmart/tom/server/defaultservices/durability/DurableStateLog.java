@@ -114,8 +114,12 @@ public class DurableStateLog extends StateLog {
 			bf.put(batchBytes);
 			bf.putInt(EOF);
 			bf.putInt(consensusId);
-			
+                        
 			log.write(bf.array());
+                        
+                        //log.getFD().sync();
+                        //log.getChannel().force(true);
+                        
 			log.seek(log.length() - 2 * INT_BYTE_SIZE);// Next write will overwrite
 													// the EOF mark
 		} catch (IOException e) {
@@ -145,6 +149,10 @@ public class DurableStateLog extends StateLog {
 			byte[] ckpState = bf.array();
 			
 			ckp.write(ckpState);
+                        
+                        //ckp.getFD().sync();
+                        //ckp.getChannel().force(true);
+                        
 			ckp.close();
 
 			if (isToLog)

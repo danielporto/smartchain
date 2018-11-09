@@ -86,7 +86,7 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
     }
 
     @Override
-    public byte[] takeCheckpointHash() {
+    public byte[] takeCheckpointHash(int cid) {
         return TOMUtil.computeHash(getSnapshot());
     }
     

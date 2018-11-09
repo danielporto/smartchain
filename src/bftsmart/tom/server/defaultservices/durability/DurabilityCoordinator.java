@@ -436,7 +436,7 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
     }
     
     @Override
-    public byte[] takeCheckpointHash(){
+    public byte[] takeCheckpointHash(int cid){
         
         return computeHash(getSnapshot());
     }

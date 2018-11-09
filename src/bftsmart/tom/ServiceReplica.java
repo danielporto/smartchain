@@ -465,7 +465,7 @@ public class ServiceReplica {
 
             if (cid % SVController.getStaticConf().getCheckpointPeriod() == 0) {
                 
-                lastCheckpointHash = executor.takeCheckpointHash();
+                lastCheckpointHash = executor.takeCheckpointHash(cid);
 
             //}
             
