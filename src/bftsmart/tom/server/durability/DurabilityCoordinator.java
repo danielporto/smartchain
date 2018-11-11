@@ -15,6 +15,7 @@ limitations under the License.
  */
 package bftsmart.tom.server.durability;
 
+import bftsmart.reconfiguration.ServerViewController;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -28,6 +29,7 @@ import bftsmart.statemanagement.durability.CSTState;
 import bftsmart.statemanagement.durability.DurableStateManager;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
+import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.server.BatchExecutable;
 import bftsmart.tom.server.Recoverable;
 import bftsmart.tom.server.defaultservices.CommandsInfo;
@@ -63,6 +65,7 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 	private DurableStateLog log;
 
 	private StateManager stateManager;
+        private ServerViewController controller;
 
 	private int lastCkpCID;
 	private int globalCheckpointPeriod;
@@ -78,16 +81,16 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 	}
 
         @Override
-        public byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs) {
+        public TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs) {
             return executeBatch(commands, msgCtxs, false);
         }
     
-        private byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtx, boolean noop) {
+        private TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtx, boolean noop) {
 		int cid = msgCtx[msgCtx.length-1].getConsensusId();
 
 		int[] cids = consensusIds(msgCtx);
 		int checkpointIndex = findCheckpointPosition(cids);
-		byte[][] replies = new byte[commands.length][];
+		TOMMessage[] replies = new TOMMessage[commands.length];
 
 		// During the consensus IDs contained in this batch of commands none of the
 		// replicas is supposed to take a checkpoint, so the replica will only execute
@@ -96,7 +99,18 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 			
                     if (!noop) {
                         stateLock.lock();
-			replies = appExecuteBatch(commands, msgCtx);
+                        
+			byte[][] results = appExecuteBatch(commands, msgCtx);
+                            
+                        for (int i = 0; i < results.length; i++) {
+
+                            TOMMessage request = msgCtx[i].recreateTOMMessage(commands[i]);
+                            request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
+                                    results[i], controller.getCurrentViewId(), request.getReqType());
+
+                            replies[i] = request;
+                        }
+                
 			stateLock.unlock();
                     }
                     logger.debug("Storing message batch in the state log for consensus " + cid);
@@ -120,15 +134,25 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 			} else
 				firstHalfMsgCtx = msgCtx;
 
-			byte[][] firstHalfReplies = new byte[firstHalf.length][];
-			byte[][] secondHalfReplies = new byte[secondHalf.length][];
+			TOMMessage[] firstHalfReplies = new TOMMessage[firstHalf.length];
+                        TOMMessage[] secondHalfReplies = new TOMMessage[secondHalf.length];
 
 			// execute the first half
 			cid = msgCtx[checkpointIndex].getConsensusId();
 			
                         if (!noop) {
                             stateLock.lock();
-                            firstHalfReplies = appExecuteBatch(firstHalf, firstHalfMsgCtx);
+                            byte[][] firstHalfResults = appExecuteBatch(firstHalf, firstHalfMsgCtx);
+                
+                            for (int i = 0; i < firstHalfResults.length; i++) {
+
+                                TOMMessage request = msgCtx[i].recreateTOMMessage(commands[i]);
+                                request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
+                                        firstHalfResults[i], controller.getCurrentViewId(), request.getReqType());
+
+                                firstHalfReplies[i] = request;
+                            }
+                            
                             stateLock.unlock();
                         }
                         
@@ -153,7 +177,18 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 				if (!noop) {
                                     
                                     stateLock.lock();
-                                    secondHalfReplies = appExecuteBatch(secondHalf, secondHalfMsgCtx);
+                                    
+                                    byte[][] secondHalfResults = appExecuteBatch(secondHalf, secondHalfMsgCtx);
+                    
+                                    for (int i = 0; i < secondHalfResults.length; i++) {
+
+                                        TOMMessage request = msgCtx[i].recreateTOMMessage(commands[i]);
+                                        request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
+                                                secondHalfResults[i], controller.getCurrentViewId(), request.getReqType());
+
+                                        secondHalfReplies[i] = request;
+                                    }
+                                    
                                     stateLock.unlock();
                                     
                                 }
@@ -355,6 +390,7 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 	@Override
 	public void setReplicaContext(ReplicaContext replicaContext) {
 		this.config = replicaContext.getStaticConfiguration();
+                this.controller = replicaContext.getSVController();
 		if(log == null) {
 			globalCheckpointPeriod = config.getGlobalCheckpointPeriod();
 			replicaCkpIndex = getCheckpointPortionIndex();

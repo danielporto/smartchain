@@ -30,6 +30,7 @@ import bftsmart.statemanagement.StateManager;
 import bftsmart.statemanagement.standard.StandardStateManager;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
+import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.server.BatchExecutable;
 import bftsmart.tom.server.Recoverable;
 import bftsmart.tom.util.TOMUtil;
@@ -71,11 +72,11 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
     }
 
     @Override
-    public byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs) {
+    public TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs) {
         return executeBatch(commands, msgCtxs, false);
     }
 
-    private byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean noop) {
+    private TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean noop) {
 
         int cid = msgCtxs[msgCtxs.length-1].getConsensusId();
 
@@ -84,14 +85,25 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
         int[] cids = consensusIds(msgCtxs);
         int checkpointIndex = findCheckpointPosition(cids);
 
-        byte[][] replies = new byte[commands.length][];
+        TOMMessage[] replies = new TOMMessage[commands.length];
 
         if (checkpointIndex == -1) {
 
             if (!noop) {
 
                 stateLock.lock();
-                replies = appExecuteBatch(commands, msgCtxs, true);
+                
+                byte[][] results = appExecuteBatch(commands, msgCtxs, true);
+                            
+                for (int i = 0; i < results.length; i++) {
+
+                    TOMMessage request = msgCtxs[i].recreateTOMMessage(commands[i]);
+                    request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
+                            results[i], controller.getCurrentViewId(), request.getReqType());
+
+                    replies[i] = request;
+                }
+                
                 stateLock.unlock();
 
             }
@@ -117,15 +129,26 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
                 firstHalfMsgCtx = msgCtxs;
             }
 
-            byte[][] firstHalfReplies = new byte[firstHalf.length][];
-            byte[][] secondHalfReplies = new byte[secondHalf.length][];
+            TOMMessage[] firstHalfReplies = new TOMMessage[firstHalf.length];
+            TOMMessage[] secondHalfReplies = new TOMMessage[secondHalf.length];
 
             // execute the first half
             cid = msgCtxs[checkpointIndex].getConsensusId();
 
             if (!noop) {
                 stateLock.lock();
-                firstHalfReplies = appExecuteBatch(firstHalf, firstHalfMsgCtx, true);
+                
+                byte[][] firstHalfResults = appExecuteBatch(firstHalf, firstHalfMsgCtx, true);
+                
+                for (int i = 0; i < firstHalfResults.length; i++) {
+
+                    TOMMessage request = msgCtxs[i].recreateTOMMessage(commands[i]);
+                    request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
+                            firstHalfResults[i], controller.getCurrentViewId(), request.getReqType());
+
+                    firstHalfReplies[i] = request;
+                }
+                
                 stateLock.unlock();
             }
 
@@ -144,7 +167,18 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
 
                 if (!noop) {
                     stateLock.lock();
-                    secondHalfReplies = appExecuteBatch(secondHalf, secondHalfMsgCtx, true);
+                    
+                    byte[][] secondHalfResults = appExecuteBatch(secondHalf, secondHalfMsgCtx, true);
+                    
+                    for (int i = 0; i < secondHalfResults.length; i++) {
+
+                        TOMMessage request = msgCtxs[i].recreateTOMMessage(commands[i]);
+                        request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
+                                secondHalfResults[i], controller.getCurrentViewId(), request.getReqType());
+
+                        secondHalfReplies[i] = request;
+                    }
+                    
                     stateLock.unlock();
                 }
 

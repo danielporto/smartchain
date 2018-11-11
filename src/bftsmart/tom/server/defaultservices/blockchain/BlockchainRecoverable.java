@@ -35,9 +35,18 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
 
     private Logger logger = LoggerFactory.getLogger(this.getClass());
     
+    public static final int BATCH_LIMIT = 10;
+    
     private TOMConfiguration config;
     private ServerViewController controller;
     private StateManager stateManager;
+    
+    //private BatchLogger cutter;
+    
+    BlockchainRecoverable() {
+        
+        //cutter = BatchLogger.getInstance(BATCH_LIMIT);
+    }
     
     @Override
     public void setReplicaContext(ReplicaContext replicaContext) {
@@ -67,27 +76,56 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
 
     @Override
     public void Op(int CID, byte[] requests, MessageContext msgCtx) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        
+        // Since we are logging entire batches, we do not use this
     }
 
     @Override
-    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtx) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs) {
+        
+        executeBatch(operations, msgCtxs, true);
     }
 
     @Override
-    public byte[][] executeBatch(byte[][] command, MessageContext[] msgCtx) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public TOMMessage[] executeBatch(byte[][] operations, MessageContext[] msgCtxs) {
+        
+        return executeBatch(operations, msgCtxs, false);
     }
 
     @Override
     public byte[] executeUnordered(byte[] command, MessageContext msgCtx) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        
+        return appExecuteUnordered(command, msgCtx);
     }
 
     @Override
     public byte[] takeCheckpointHash(int cid) {
         return TOMUtil.computeHash(getSnapshot());
+    }
+    
+    private TOMMessage[] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean noop) {
+        
+        //boolean timeToSync = cutter.log(operations, msgCtxs);
+        
+        TOMMessage[] replies = new TOMMessage[operations.length];
+        
+        if (!noop) {
+            
+            byte[][] results = appExecuteBatch(operations, msgCtxs, false);
+            replies = new TOMMessage[results.length];
+            
+            for (int i = 0; i < results.length; i++) {
+                
+                TOMMessage request = msgCtxs[i].recreateTOMMessage(operations[i]);
+                request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
+                        results[i], controller.getCurrentViewId(), request.getReqType());
+                
+                replies[i] = request;
+            }
+        }
+        
+        return replies;
+                
     }
     
     public boolean verifyBatch(byte[][] commands, MessageContext[] msgCtxs){

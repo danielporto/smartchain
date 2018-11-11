@@ -435,21 +435,23 @@ public class ServiceReplica {
             msgContexts = msgCtxts.toArray(msgContexts);
             
             //Deliver the batch and wait for replies
-            byte[][] replies = ((BatchExecutable) executor).executeBatch(batch, msgContexts);
+            TOMMessage[] replies = ((BatchExecutable) executor).executeBatch(batch, msgContexts);
 
             //Send the replies back to the client
-            for (int index = 0; index < toBatch.size(); index++) {
-                TOMMessage request = toBatch.get(index);
-                request.reply = new TOMMessage(id, request.getSession(), request.getSequence(), request.getOperationId(),
-                        replies[index], SVController.getCurrentViewId(), request.getReqType());
+            //for (int index = 0; index < toBatch.size(); index++) {
+            for (TOMMessage reply : replies) {
+                
+                //TOMMessage request = toBatch.get(index);
+                //request.reply = new TOMMessage(id, request.getSession(), request.getSequence(), request.getOperationId(),
+                //        replies[index], SVController.getCurrentViewId(), request.getReqType());
 
                 if (SVController.getStaticConf().getNumRepliers() > 0) {
-                    logger.debug("Sending reply to " + request.getSender() + " with sequence number " + request.getSequence() + " and operation ID " + request.getOperationId() +" via ReplyManager");
-                    repMan.send(request);
+                    logger.debug("Sending reply to " + reply.getSender() + " with sequence number " + reply.getSequence() + " and operation ID " + reply.getOperationId() +" via ReplyManager");
+                    repMan.send(reply);
                 } else {
-                    logger.debug("Sending reply to " + request.getSender() + " with sequence number " + request.getSequence() + " and operation ID " + request.getOperationId());
-                    replier.manageReply(request, msgContexts[index]);
-                    //cs.send(new int[]{request.getSender()}, request.reply);
+                    logger.debug("Sending reply to " + reply.getSender() + " with sequence number " + reply.getSequence() + " and operation ID " + reply.getOperationId());
+                    replier.manageReply(reply, null);
+
                 }
             }
 
