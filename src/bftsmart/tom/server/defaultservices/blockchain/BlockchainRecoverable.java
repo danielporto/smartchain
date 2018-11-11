@@ -81,15 +81,15 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
     }
 
     @Override
-    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs) {
+    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
         
-        executeBatch(operations, msgCtxs, true);
+        executeBatch(operations, msgCtxs, isCheckpoint, true);
     }
 
     @Override
-    public TOMMessage[] executeBatch(byte[][] operations, MessageContext[] msgCtxs) {
+    public TOMMessage[] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
         
-        return executeBatch(operations, msgCtxs, false);
+        return executeBatch(operations, msgCtxs, isCheckpoint, false);
     }
 
     @Override
@@ -103,7 +103,7 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
         return TOMUtil.computeHash(getSnapshot());
     }
     
-    private TOMMessage[] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean noop) {
+    private TOMMessage[] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint, boolean noop) {
         
         //boolean timeToSync = cutter.log(operations, msgCtxs);
         

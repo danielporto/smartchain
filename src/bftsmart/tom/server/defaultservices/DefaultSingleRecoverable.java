@@ -71,13 +71,13 @@ public abstract class DefaultSingleRecoverable implements Recoverable, SingleExe
     }
     
     @Override
-    public byte[] executeOrdered(byte[] command, MessageContext msgCtx) {
+    public byte[] executeOrdered(byte[] command, MessageContext msgCtx, boolean isCheckpoint) {
         
-        return executeOrdered(command, msgCtx, false);
+        return executeOrdered(command, msgCtx, isCheckpoint, false);
         
     }
     
-    private byte[] executeOrdered(byte[] command, MessageContext msgCtx, boolean noop) {
+    private byte[] executeOrdered(byte[] command, MessageContext msgCtx, boolean isCheckpoint, boolean noop) {
         
         int cid = msgCtx.getConsensusId();
         
@@ -302,10 +302,10 @@ public abstract class DefaultSingleRecoverable implements Recoverable, SingleExe
     }
 
     @Override
-    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtx) {
+    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtx, boolean isCheckpoint) {
          
         for (int i = 0; i < msgCtx.length; i++) {
-            executeOrdered(operations[i], msgCtx[i], true);
+            executeOrdered(operations[i], msgCtx[i], isCheckpoint, true);
         }
     }
     

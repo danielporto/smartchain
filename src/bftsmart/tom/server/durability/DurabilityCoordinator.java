@@ -81,11 +81,11 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 	}
 
         @Override
-        public TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs) {
-            return executeBatch(commands, msgCtxs, false);
+        public TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean isCheckpoint) {
+            return executeBatch(commands, msgCtxs, isCheckpoint, false);
         }
     
-        private TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtx, boolean noop) {
+        private TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtx, boolean isCheckpoint, boolean noop) {
 		int cid = msgCtx[msgCtx.length-1].getConsensusId();
 
 		int[] cids = consensusIds(msgCtx);
@@ -465,9 +465,9 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
         }
 
         @Override
-    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs) {
+    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
         
-        executeBatch(operations, msgCtxs, true);
+        executeBatch(operations, msgCtxs, isCheckpoint, true);
 
     }
     

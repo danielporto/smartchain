@@ -88,8 +88,9 @@ public interface Recoverable {
      * @param CID the consensus instance where the aforementioned condition occurred
      * @param operations Operations decided in CID
      * @param msgCtx Message context associated with the consensus instance. furthermore
+     * @param isCheckpoint Notify application that this consensus instance will require a checkpoint hash in its consensus proof
      * msgCtx.getConsensusId() will be equal to CID.
      */
-    public void noOp(int CID, byte[][] operations, MessageContext msgCtx[]);
+    public void noOp(int CID, byte[][] operations, MessageContext msgCtx[], boolean isCheckpoint);
 	
 }

@@ -30,8 +30,9 @@ public interface BatchExecutable extends Executable {
      * Execute a batch of requests.
      * @param command The batch of requests
      * @param msgCtx The context associated to each request
+     * @param isCheckpoint Notify application that this consensus instance will require a checkpoint hash in its consensus proof
      * @return
      */
-    public TOMMessage[] executeBatch(byte[][] command, MessageContext[] msgCtx);
+    public TOMMessage[] executeBatch(byte[][] command, MessageContext[] msgCtx, boolean isCheckpoint);
 
 }

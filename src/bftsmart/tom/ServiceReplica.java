@@ -347,7 +347,8 @@ public class ServiceReplica {
                                 
                                 // This is used to deliver the requests to the application and obtain a reply to deliver
                                 //to the clients. The raw decision is passed to the application in the line above.
-                                byte[] response = ((SingleExecutable) executor).executeOrdered(request.getContent(), msgCtx);
+                                byte[] response = ((SingleExecutable) executor).executeOrdered(request.getContent(), msgCtx,
+                                        msgCtx.getConsensusId() % SVController.getStaticConf().getCheckpointPeriod() == 0);
                                 
                                 // Generate the messages to send back to the clients
                                 request.reply = new TOMMessage(id, request.getSession(),
@@ -407,7 +408,8 @@ public class ServiceReplica {
                     }
                 }
 
-                this.recoverer.noOp(consId[consensusCount], batch, msgCtx);
+                this.recoverer.noOp(consId[consensusCount], batch, msgCtx,
+                        consId[consensusCount] % SVController.getStaticConf().getCheckpointPeriod() == 0);
                 
                 //MessageContext msgCtx = new MessageContext(-1, -1, null, -1, -1, -1, -1, null, // Since it is a noop, there is no need to pass info about the client...
                 //        -1, 0, 0, regencies[consensusCount], leaders[consensusCount], consId[consensusCount], cDecs[consensusCount].getConsMessages(), //... but there is still need to pass info about the consensus
@@ -433,9 +435,11 @@ public class ServiceReplica {
 
             MessageContext[] msgContexts = new MessageContext[msgCtxts.size()];
             msgContexts = msgCtxts.toArray(msgContexts);
+            int cid = msgContexts[0].getConsensusId();
             
             //Deliver the batch and wait for replies
-            TOMMessage[] replies = ((BatchExecutable) executor).executeBatch(batch, msgContexts);
+            TOMMessage[] replies = ((BatchExecutable) executor).executeBatch(batch, msgContexts,
+                    cid % SVController.getStaticConf().getCheckpointPeriod() == 0);
 
             //Send the replies back to the client
             //for (int index = 0; index < toBatch.size(); index++) {
@@ -454,8 +458,6 @@ public class ServiceReplica {
 
                 }
             }
-
-            int cid = msgContexts[0].getConsensusId();
             
             /*try {
                 lastBlockHash = TOMUtil.computeBlockHash(cid, lastBlockHash, toBatch);

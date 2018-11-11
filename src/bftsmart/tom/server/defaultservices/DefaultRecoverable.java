@@ -72,11 +72,11 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
     }
 
     @Override
-    public TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs) {
-        return executeBatch(commands, msgCtxs, false);
+    public TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean takesnapshot) {
+        return executeBatch(commands, msgCtxs, takesnapshot, false);
     }
 
-    private TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean noop) {
+    private TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean isCheckpoint,  boolean noop) {
 
         int cid = msgCtxs[msgCtxs.length-1].getConsensusId();
 
@@ -458,9 +458,9 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
     }
     
     @Override
-    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs) {
+    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
         
-        executeBatch(operations, msgCtxs, true);
+        executeBatch(operations, msgCtxs, true, isCheckpoint);
 
     }
     
