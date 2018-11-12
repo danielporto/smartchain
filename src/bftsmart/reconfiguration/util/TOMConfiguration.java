@@ -55,6 +55,7 @@ public class TOMConfiguration extends Configuration {
     private boolean syncLog;
     private boolean parallelLog;
     private boolean logToDisk;
+    private int logBatchLimit;
     private boolean isToWriteCkpsToDisk;
     private boolean syncCkp;
     private boolean isBFT;
@@ -273,6 +274,14 @@ public class TOMConfiguration extends Configuration {
             } else {
                     logToDisk = false;
             }
+            
+            s = (String) configs
+                            .remove("system.totalordermulticast.log_batch_limit");
+            if (s != null) {
+                    logBatchLimit = Integer.parseInt(s);
+            } else {
+                    logBatchLimit = 10;
+            }
 
             s = (String) configs
                             .remove("system.totalordermulticast.sync_log");
@@ -473,7 +482,11 @@ public class TOMConfiguration extends Configuration {
 	public boolean logToDisk() {
 		return logToDisk;
 	}
-
+        
+        public int getLogBatchLimit() {
+            return logBatchLimit;
+        }
+    
 	public boolean isToLogParallel() {
 		// TODO Auto-generated method stub
 		return parallelLog;

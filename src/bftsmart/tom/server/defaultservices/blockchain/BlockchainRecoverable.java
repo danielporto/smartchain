@@ -37,7 +37,6 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
     private Logger logger = LoggerFactory.getLogger(this.getClass());
     
     public String batchDir;    
-    public static final int BATCH_LIMIT = 10;
     
     private TOMConfiguration config;
     private ServerViewController controller;
@@ -142,7 +141,7 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
                 }
             }
             
-            if (cid % BATCH_LIMIT == 0) {
+            if (cid % config.getLogBatchLimit() == 0) {
                 
                 replies = new TOMMessage[this.results.size()];
                 
