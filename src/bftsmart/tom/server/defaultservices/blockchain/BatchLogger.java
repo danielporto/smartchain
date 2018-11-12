@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.HashMap;
 import java.util.LinkedList;
 import org.slf4j.Logger;
@@ -32,6 +33,7 @@ public class BatchLogger {
     private int firstCachedCID = -1;
     private LinkedList<CommandsInfo> cachedBatches;
     private RandomAccessFile log;
+    private FileChannel channel;
     private String logPath;
     
     private BatchLogger() {
@@ -50,6 +52,7 @@ public class BatchLogger {
         
         logger.debug("Logging to file " + logPath);
         log = new RandomAccessFile(logPath, "rw");
+        channel = log.getChannel();
 
     }
     
@@ -124,7 +127,7 @@ public class BatchLogger {
         logger.debug("synching to disk");
 
         //log.getFD().sync();
-        log.getChannel().force(false);
+        channel.force(false);
         
         logger.debug("synced to disk");
     }
