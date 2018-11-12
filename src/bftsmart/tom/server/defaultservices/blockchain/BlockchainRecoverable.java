@@ -141,7 +141,7 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
                 }
             }
             
-            if (this.results.size() % config.getLogBatchLimit() == 0) {
+            if (isCheckpoint || (this.results.size() % config.getLogBatchLimit() == 0)) {
                 
                 replies = new TOMMessage[this.results.size()];
                 
