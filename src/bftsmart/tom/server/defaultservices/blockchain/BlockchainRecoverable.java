@@ -141,12 +141,14 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
                 }
             }
             
-            if (cid % config.getLogBatchLimit() == 0) {
+            if (this.results.size() % config.getLogBatchLimit() == 0) {
                 
                 replies = new TOMMessage[this.results.size()];
                 
                 this.results.toArray(replies);
                 this.results.clear();
+                
+                logger.info("Synching log at CID " + cid);
                 
                 log.sync();
                 
