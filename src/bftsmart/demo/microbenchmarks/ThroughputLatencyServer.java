@@ -17,6 +17,7 @@ package bftsmart.demo.microbenchmarks;
 
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ServiceReplica;
+import bftsmart.tom.server.defaultservices.blockchain.BlockchainRecoverable;
 import bftsmart.tom.server.durability.DurabilityCoordinator;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
@@ -39,7 +40,7 @@ import java.util.Base64;
 /**
  * Simple server that just acknowledge the reception of a request.
  */
-public final class ThroughputLatencyServer extends DurabilityCoordinator {
+public final class ThroughputLatencyServer extends BlockchainRecoverable {
     
     private int interval;
     private byte[] reply;
@@ -115,7 +116,7 @@ public final class ThroughputLatencyServer extends DurabilityCoordinator {
     }
     
     @Override
-    public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs) {
+    public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs, boolean iCheckpoint) {
         
         batchSize.store(commands.length);
                 

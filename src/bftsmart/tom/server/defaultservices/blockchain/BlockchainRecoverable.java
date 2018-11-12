@@ -24,6 +24,7 @@ import java.io.ObjectOutputStream;
 import java.security.PublicKey;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,24 +36,38 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
 
     private Logger logger = LoggerFactory.getLogger(this.getClass());
     
+    public String batchDir;    
     public static final int BATCH_LIMIT = 10;
     
     private TOMConfiguration config;
     private ServerViewController controller;
     private StateManager stateManager;
     
-    //private BatchLogger cutter;
+    private BatchLogger log;
+    private LinkedList<TOMMessage> results;
     
-    BlockchainRecoverable() {
+    public BlockchainRecoverable() {
         
-        //cutter = BatchLogger.getInstance(BATCH_LIMIT);
+        
+        results = new LinkedList<>();
     }
     
     @Override
     public void setReplicaContext(ReplicaContext replicaContext) {
-        this.config = replicaContext.getStaticConfiguration();
-        this.controller = replicaContext.getSVController();
-        //initLog();
+
+        try {
+            
+            config = replicaContext.getStaticConfiguration();
+            controller = replicaContext.getSVController();
+        
+            //batchDir = config.getConfigHome().concat(System.getProperty("file.separator")) +
+            batchDir =    "files".concat(System.getProperty("file.separator"));
+            log = BatchLogger.getInstance(config.getProcessId(), batchDir);
+            
+        } catch (Exception ex) {
+            
+            throw new RuntimeException("Could not set replica context", ex);
+        }
         getStateManager().askCurrentConsensusId();
     }
 
@@ -105,26 +120,44 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
     
     private TOMMessage[] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint, boolean noop) {
         
-        //boolean timeToSync = cutter.log(operations, msgCtxs);
+        int cid = msgCtxs[0].getConsensusId();
+        TOMMessage[] replies = new TOMMessage[0];
         
-        TOMMessage[] replies = new TOMMessage[operations.length];
-        
-        if (!noop) {
+        try {
             
-            byte[][] results = appExecuteBatch(operations, msgCtxs, false);
-            replies = new TOMMessage[results.length];
-            
-            for (int i = 0; i < results.length; i++) {
+            log.store(cid, operations, msgCtxs);
+                        
+            if (!noop) {
                 
-                TOMMessage request = msgCtxs[i].recreateTOMMessage(operations[i]);
-                request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
-                        results[i], controller.getCurrentViewId(), request.getReqType());
+                byte[][] results = appExecuteBatch(operations, msgCtxs, false);
+                //replies = new TOMMessage[results.length];
                 
-                replies[i] = request;
+                for (int i = 0; i < results.length; i++) {
+                    
+                    TOMMessage request = msgCtxs[i].recreateTOMMessage(operations[i]);
+                    request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
+                            results[i], controller.getCurrentViewId(), request.getReqType());
+                    
+                    this.results.add(request);
+                }
             }
+            
+            if (cid % BATCH_LIMIT == 0) {
+                
+                replies = new TOMMessage[this.results.size()];
+                
+                this.results.toArray(replies);
+                this.results.clear();
+                
+                log.sync();
+                
+            }
+            
+            return replies;
+        } catch (IOException ex) {
+            logger.error("Error while logging/executing batch for CID " + cid, ex);
+            return new TOMMessage[0];
         }
-        
-        return replies;
                 
     }
     
