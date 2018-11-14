@@ -11,9 +11,11 @@ import bftsmart.reconfiguration.util.TOMConfiguration;
 import bftsmart.statemanagement.ApplicationState;
 import bftsmart.statemanagement.StateManager;
 import bftsmart.statemanagement.standard.StandardStateManager;
+import bftsmart.tom.AsynchServiceProxy;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
 import bftsmart.tom.core.messages.TOMMessage;
+import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.server.BatchExecutable;
 import bftsmart.tom.server.Recoverable;
 import bftsmart.tom.util.BatchBuilder;
@@ -26,8 +28,16 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
+import org.apache.commons.codec.binary.Base64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,8 +45,8 @@ import org.slf4j.LoggerFactory;
  *
  * @author joao
  */
-public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExecutable {
-
+public abstract class StrongBlockchainRecoverable implements Recoverable, BatchExecutable {
+    
     private Logger logger = LoggerFactory.getLogger(this.getClass());
     
     public String batchDir;    
@@ -52,15 +62,25 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
     private int lastCheckpoint;
     private int lastReconfig;
     private byte[] lastBlockHash;
-        
-    public WeakBlockchainRecoverable() {
+    
+    private AsynchServiceProxy proxy;
+    
+    private ReentrantLock mapLock = new ReentrantLock();
+    private Condition gotCertificate = mapLock.newCondition();
+    private Map<Integer, Map<Integer,byte[]>> certificates;
+    private int currentCommit;
+    
+    public StrongBlockchainRecoverable() {
         
         nextNumber = 0;
         lastCheckpoint = -1;
         lastReconfig = -1;
         lastBlockHash = new byte[] {-1};
         
-        results = new LinkedList<>();        
+        results = new LinkedList<>(); 
+        
+        currentCommit = -1;
+        certificates =  new HashMap<>();
     }
     
     @Override
@@ -70,16 +90,18 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             
             config = replicaContext.getStaticConfiguration();
             controller = replicaContext.getSVController();
+            
+            proxy = new AsynchServiceProxy(config.getProcessId());
         
             //batchDir = config.getConfigHome().concat(System.getProperty("file.separator")) +
             batchDir =    "files".concat(System.getProperty("file.separator"));
             log = BatchLogger.getInstance(config.getProcessId(), batchDir);
             
             //write genesis block
-            byte[] transHash = log.markEndTransactions()[0];
-            log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, transHash, new byte[0], lastBlockHash);
+            byte[][] hashes = log.markEndTransactions();
+            log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
                         
-            lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, transHash, lastBlockHash);
+            lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
                         
             nextNumber++;
             
@@ -129,7 +151,45 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
     @Override
     public byte[] executeUnordered(byte[] command, MessageContext msgCtx) {
         
-        return appExecuteUnordered(command, msgCtx);
+        if (controller.isCurrentViewMember(msgCtx.getSender())) {
+                        
+            ByteBuffer buff = ByteBuffer.wrap(command);
+            
+            int cid = buff.getInt();
+            byte[] sig = new byte[buff.getInt()];
+            buff.get(sig);
+            
+            logger.debug("Received signature from {}: {}", msgCtx.getSender(), Base64.encodeBase64String(sig));
+
+            if (currentCommit <= cid) {
+            
+                mapLock.lock();
+
+                Map<Integer,byte[]> signatures = certificates.get(cid);
+                if (signatures == null) {
+
+                    signatures = new HashMap<>();
+                    certificates.put(cid, signatures);
+                }
+
+                signatures.put(msgCtx.getSender(), sig);
+
+                logger.debug("got {} sigs for CID {}", signatures.size(), cid);
+
+                if (currentCommit == cid && signatures.size() > controller.getQuorum()) {
+
+                    logger.debug("Signaling main thread");
+                    gotCertificate.signalAll();
+                }
+
+                mapLock.unlock();
+            
+            }
+            return new byte[0];
+        }
+        else {
+            return appExecuteUnordered(command, msgCtx);
+        }
     }
 
     @Override
@@ -151,6 +211,8 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                 byte[][] results = appExecuteBatch(operations, msgCtxs, false);
                 //replies = new TOMMessage[results.length];
                 
+                log.storeResults(results);
+                
                 for (int i = 0; i < results.length; i++) {
                     
                     TOMMessage request = msgCtxs[i].recreateTOMMessage(operations[i]);                    
@@ -163,11 +225,11 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             
             if (isCheckpoint || (this.results.size() % config.getLogBatchLimit() == 0)) {
                 
-                byte[] transHash = log.markEndTransactions()[0];
+                byte[][] hashes = log.markEndTransactions();
                 
-                log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, transHash, new byte[0], lastBlockHash);
+                log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
                 
-                lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, transHash, lastBlockHash);
+                lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
                 nextNumber++;
                                 
                 replies = new TOMMessage[this.results.size()];
@@ -177,23 +239,73 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                 
                 if (isCheckpoint) log.clearCached();
                 
-                logger.info("Synching log at CID " + cid);
+                logger.info("Executing COMMIT phase at CID {} for block number {}", cid, (nextNumber - 1));
+                
+                byte[] mySig = TOMUtil.signMessage(config.getPrivateKey(), lastBlockHash);
+                
+                ByteBuffer buff = ByteBuffer.allocate((Integer.BYTES * 2) + mySig.length);
+                
+                buff.putInt(cid);
+                buff.putInt(mySig.length);
+                buff.put(mySig);
+                
+                int context = proxy.invokeAsynchRequest(buff.array(), null, TOMMessageType.UNORDERED_REQUEST);
+                proxy.cleanAsynchRequest(context);
+                
+                mapLock.lock();
+                
+                certificates.remove(currentCommit);
+
+                currentCommit = cid;
+                
+                Map<Integer,byte[]> signatures = certificates.get(cid);
+                if (signatures == null) {
+                    
+                    signatures = new HashMap<>();
+                    certificates.put(cid, signatures);
+                }
+                
+                while (!(signatures.size() > controller.getQuorum())) {
+                    
+                    logger.debug("blocking main thread");
+                    gotCertificate.await(200, TimeUnit.MILLISECONDS);
+                    //gotCertificate.await();
+                    
+                    //signatures = certificates.get(cid);
+                }
+                
+                signatures = certificates.get(cid);
+                
+                Map<Integer,byte[]> copy = new HashMap<>();
+                
+                signatures.forEach((id,sig) -> {
+                    
+                    copy.put(id, sig);
+                });
+                                
+                mapLock.unlock();
+                
+                log.storeCertificate(copy);
+                                
+                logger.info("Synching log at CID {} and Block {}", cid, (nextNumber - 1));
                 
                 log.sync();
+                
                 
             }
             
             return replies;
-        } catch (IOException | NoSuchAlgorithmException ex) {
+        } catch (IOException | NoSuchAlgorithmException | InterruptedException ex) {
             logger.error("Error while logging/executing batch for CID " + cid, ex);
             return new TOMMessage[0];
+        } finally {
+            if (mapLock.isHeldByCurrentThread()) mapLock.unlock();
         }
-                
     }
     
-    private byte[] computeBlockHash(int number, int lastCheckpoint, int lastReconf,  byte[] transHash,  byte[] prevBlock) throws NoSuchAlgorithmException {
+    private byte[] computeBlockHash(int number, int lastCheckpoint, int lastReconf,  byte[] transHash, byte[] resultsHash, byte[] prevBlock) throws NoSuchAlgorithmException {
     
-        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES * 5 + (prevBlock.length + transHash.length));
+        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES * 6 + (prevBlock.length + transHash.length + resultsHash.length));
         
         buff.putInt(number);
         buff.putInt(lastCheckpoint);
@@ -201,6 +313,9 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
 
         buff.putInt(transHash.length);
         buff.put(transHash);
+        
+        buff.putInt(resultsHash.length);
+        buff.put(resultsHash);
         
         buff.putInt(prevBlock.length);
         buff.put(prevBlock);
@@ -307,4 +422,5 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
      * @return the reply for the request issued by the client
      */
     public abstract byte[] appExecuteUnordered(byte[] command, MessageContext msgCtx);
+
 }

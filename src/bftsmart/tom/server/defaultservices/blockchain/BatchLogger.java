@@ -18,8 +18,8 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,10 +35,12 @@ public class BatchLogger {
     private int lastCachedCID = -1;
     private int firstCachedCID = -1;
     private LinkedList<CommandsInfo> cachedBatches;
+    private LinkedList<byte[][]> cachedResults;
     private RandomAccessFile log;
     private FileChannel channel;
     private String logPath;
     private MessageDigest transDigest;
+    private MessageDigest resultsDigest;
     
     private BatchLogger() {
         //not to be used
@@ -48,6 +50,7 @@ public class BatchLogger {
     private BatchLogger(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
         this.id = id;
         cachedBatches = new LinkedList<>();
+        cachedResults = new LinkedList<>();
         
         File directory = new File(logDir);
         if (!directory.exists()) directory.mkdir();
@@ -59,7 +62,7 @@ public class BatchLogger {
         channel = log.getChannel();
          
         transDigest = TOMUtil.getHashEngine();
-
+        resultsDigest = TOMUtil.getHashEngine();
 
     }
     
@@ -78,27 +81,76 @@ public class BatchLogger {
         
     }
     
-    public byte[] markEndTransactions() throws IOException {
-        
-        log.write(-1);
-        return transDigest.digest();
+    public void storeResults(byte[][] results) throws IOException{
+     
+        cachedResults.add(results);
+        writeResultsToDisk(results);
     }
     
-    public void storeHeader(int number, int lastCheckpoint, int lastReconf,  byte[] transHash,  byte[] prevBlock) throws IOException {
+    public byte[][] markEndTransactions() throws IOException {
+        
+        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES);
+        buff.putInt(-1);
+        
+        buff.flip();
+        
+        channel.write(buff);
+        return new byte[][] {transDigest.digest(), resultsDigest.digest()};
+    }
+    
+    public void storeHeader(int number, int lastCheckpoint, int lastReconf,  byte[] transHash,  byte[] resultsHash,  byte[] prevBlock) throws IOException {
      
         logger.debug("writting header for block #{} to disk", number);
         
-        log.writeInt(number);
-        log.writeInt(lastCheckpoint);
-        log.writeInt(lastReconf);
+        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES * 6 + (prevBlock.length + transHash.length + resultsHash.length));
         
-        log.writeInt(transHash.length);
-        log.write(transHash);
+        buff.putInt(number);
+        buff.putInt(lastCheckpoint);
+        buff.putInt(lastReconf);
+
+        buff.putInt(transHash.length);
+        buff.put(transHash);
         
-        log.writeInt(prevBlock.length);
-        log.write(prevBlock);
+        buff.putInt(resultsHash.length);
+        buff.put(resultsHash);
+        
+        buff.putInt(prevBlock.length);
+        buff.put(prevBlock);
+        
+        buff.flip();
+                
+        channel.write(buff);
         
         logger.debug("wrote header for block #{} to disk", number);
+    }
+    
+    public void storeCertificate(Map<Integer, byte[]> sigs) throws IOException {
+        
+        logger.debug("writting certificate to disk");
+        
+        
+        int certSize = 0;
+        for (int id : sigs.keySet()) {
+            
+            certSize += sigs.get(id).length;
+        }
+        
+        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES * (1 + (sigs.size() * 2)) + (certSize));
+        
+        buff.putInt(sigs.size());
+        
+        for (int id : sigs.keySet()) {
+        
+            buff.putInt(id);
+            buff.putInt(sigs.get(id).length);
+            buff.put(sigs.get(id));
+        }
+        
+        buff.flip();
+        
+        channel.write(buff);
+        
+        logger.debug("wrote certificate to disk");
     }
     
     public int getLastCachedCID() {
@@ -139,14 +191,49 @@ public class BatchLogger {
         //update the transactions hash for the entire block
         transDigest.update(transBytes);
 
-        log.writeInt(cid);
-        log.writeInt(transBytes.length);
-        log.write(transBytes);
+        ByteBuffer buff = ByteBuffer.allocate((Integer.BYTES * 2) + transBytes.length);
+        
+        buff.putInt(cid);
+        buff.putInt(transBytes.length);
+        buff.put(transBytes);
+        
+        buff.flip();
+        
+        channel.write(buff);
         
         logger.debug("wrote transactions to disk");
 
     }
     
+    private void writeResultsToDisk(byte[][] results) throws IOException {
+        
+        logger.debug("writting transactios to disk");
+        
+        int resultsSize = 0;
+        for (byte[] result : results) {
+            resultsSize += result.length;
+        }
+        
+        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES * (1 + results.length) + (resultsSize));
+        
+        buff.putInt(results.length);
+        
+        for (byte[] result : results) {
+        
+            //update the results hash for the entire block
+            resultsDigest.update(result);
+
+            buff.putInt(result.length);
+            buff.put(result);
+        }
+        
+        buff.flip();
+        
+        channel.write(buff);
+        
+        logger.debug("wrote transactions to disk");
+
+    }
     
     public void sync() throws IOException {
         

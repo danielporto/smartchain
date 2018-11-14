@@ -17,7 +17,7 @@ package bftsmart.demo.microbenchmarks;
 
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ServiceReplica;
-import bftsmart.tom.server.defaultservices.blockchain.WeakBlockchainRecoverable;
+import bftsmart.tom.server.defaultservices.blockchain.StrongBlockchainRecoverable;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayInputStream;
@@ -39,7 +39,7 @@ import java.util.Base64;
 /**
  * Simple server that just acknowledge the reception of a request.
  */
-public final class ThroughputLatencyServer extends WeakBlockchainRecoverable {
+public final class StrongThroughputServer extends StrongBlockchainRecoverable {
     
     private int interval;
     private byte[] reply;
@@ -66,7 +66,7 @@ public final class ThroughputLatencyServer extends WeakBlockchainRecoverable {
     
     private RandomAccessFile randomAccessFile = null;
 
-    public ThroughputLatencyServer(int id, int interval, int replySize, int stateSize, boolean context,  int signed, int write) {
+    public StrongThroughputServer(int id, int interval, int replySize, int stateSize, boolean context,  int signed, int write) {
 
         this.interval = interval;
         this.context = context;
@@ -304,7 +304,7 @@ public final class ThroughputLatencyServer extends WeakBlockchainRecoverable {
         if (!write.equalsIgnoreCase("")) w++;
         if (write.equalsIgnoreCase("rwd")) w++;
 
-        new ThroughputLatencyServer(processId,interval,replySize, stateSize, context, s, w);        
+        new StrongThroughputServer(processId,interval,replySize, stateSize, context, s, w);        
     }
 
     @Override
