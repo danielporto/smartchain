@@ -7,6 +7,7 @@ package bftsmart.tom.server.defaultservices.blockchain;
 
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.server.defaultservices.CommandsInfo;
+import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -15,6 +16,8 @@ import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.LinkedList;
 import org.slf4j.Logger;
@@ -35,13 +38,14 @@ public class BatchLogger {
     private RandomAccessFile log;
     private FileChannel channel;
     private String logPath;
+    private MessageDigest transDigest;
     
     private BatchLogger() {
         //not to be used
         
     }
     
-    private BatchLogger(int id, String logDir) throws FileNotFoundException {
+    private BatchLogger(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
         this.id = id;
         cachedBatches = new LinkedList<>();
         
@@ -53,22 +57,48 @@ public class BatchLogger {
         logger.debug("Logging to file " + logPath);
         log = new RandomAccessFile(logPath, "rw");
         channel = log.getChannel();
+         
+        transDigest = TOMUtil.getHashEngine();
+
 
     }
     
-    public static BatchLogger getInstance(int id, String logDir) throws FileNotFoundException {
+    public static BatchLogger getInstance(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
         BatchLogger ret = new BatchLogger(id, logDir);
         return ret;
     }
     
-    public void store(int cid, byte[][] requests, MessageContext[] contexts) throws IOException {
+    public void storeTransactions(int cid, byte[][] requests, MessageContext[] contexts) throws IOException {
         
         if (firstCachedCID == -1) firstCachedCID = cid;
         lastCachedCID = cid;
         CommandsInfo cmds = new CommandsInfo(requests, contexts);
         cachedBatches.add(cmds);
-        writeToDisk(cid, cmds);
+        writeTransactionsToDisk(cid, cmds);
         
+    }
+    
+    public byte[] markEndTransactions() throws IOException {
+        
+        log.write(-1);
+        return transDigest.digest();
+    }
+    
+    public void storeHeader(int number, int lastCheckpoint, int lastReconf,  byte[] transHash,  byte[] prevBlock) throws IOException {
+     
+        logger.debug("writting header for block #{} to disk", number);
+        
+        log.writeInt(number);
+        log.writeInt(lastCheckpoint);
+        log.writeInt(lastReconf);
+        
+        log.writeInt(transHash.length);
+        log.write(transHash);
+        
+        log.writeInt(prevBlock.length);
+        log.write(prevBlock);
+        
+        logger.debug("wrote header for block #{} to disk", number);
     }
     
     public int getLastCachedCID() {
@@ -93,43 +123,39 @@ public class BatchLogger {
         lastCachedCID = -1;
     }
     
-    private void writeToDisk(int cid, CommandsInfo commandsInfo) throws IOException {
+    private void writeTransactionsToDisk(int cid, CommandsInfo commandsInfo) throws IOException {
         
-        logger.debug("writting to disk");
+        logger.debug("writting transactios to disk");
         
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         ObjectOutputStream oos = new ObjectOutputStream(bos);
         oos.writeObject(commandsInfo);
         oos.flush();
 
-        byte[] batchBytes = bos.toByteArray();
+        byte[] transBytes = bos.toByteArray();
         oos.close();
         bos.close();
-
-        ByteBuffer bf = ByteBuffer.allocate((2 * Integer.BYTES) + batchBytes.length);
-        bf.putInt(cid);
-        bf.putInt(batchBytes.length);
-        bf.put(batchBytes);
-        //bf.putInt(EOF);
-        //bf.putInt(consensusId);
-
-        log.write(bf.array());
         
-        logger.debug("wrote to disk");
+        //update the transactions hash for the entire block
+        transDigest.update(transBytes);
 
-        //log.seek(log.length() - 2 * Integer.BYTES);// Next write will overwrite the EOF mark
+        log.writeInt(cid);
+        log.writeInt(transBytes.length);
+        log.write(transBytes);
+        
+        logger.debug("wrote transactions to disk");
 
     }
     
     
     public void sync() throws IOException {
         
-        logger.debug("synching to disk");
+        logger.debug("synching log to disk");
 
         //log.getFD().sync();
         channel.force(false);
         
-        logger.debug("synced to disk");
+        logger.debug("synced log to disk");
     }
     
 

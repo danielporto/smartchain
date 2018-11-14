@@ -21,6 +21,9 @@ import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
+import java.nio.ByteBuffer;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -32,7 +35,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author joao
  */
-public abstract class BlockchainRecoverable implements Recoverable, BatchExecutable {
+public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExecutable {
 
     private Logger logger = LoggerFactory.getLogger(this.getClass());
     
@@ -45,10 +48,19 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
     private BatchLogger log;
     private LinkedList<TOMMessage> results;
     
-    public BlockchainRecoverable() {
+    private int nextNumber;
+    private int lastCheckpoint;
+    private int lastReconfig;
+    private byte[] lastBlockHash;
         
+    public WeakBlockchainRecoverable() {
         
-        results = new LinkedList<>();
+        nextNumber = 0;
+        lastCheckpoint = -1;
+        lastReconfig = -1;
+        lastBlockHash = new byte[] {-1};
+        
+        results = new LinkedList<>();        
     }
     
     @Override
@@ -62,6 +74,14 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
             //batchDir = config.getConfigHome().concat(System.getProperty("file.separator")) +
             batchDir =    "files".concat(System.getProperty("file.separator"));
             log = BatchLogger.getInstance(config.getProcessId(), batchDir);
+            
+            //write genesis block
+            byte[] transHash = log.markEndTransactions();
+            log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, transHash, lastBlockHash);
+                        
+            lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, transHash, lastBlockHash);
+                        
+            nextNumber++;
             
         } catch (Exception ex) {
             
@@ -124,7 +144,7 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
         
         try {
             
-            log.store(cid, operations, msgCtxs);
+            log.storeTransactions(cid, operations, msgCtxs);
                         
             if (!noop) {
                 
@@ -133,7 +153,7 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
                 
                 for (int i = 0; i < results.length; i++) {
                     
-                    TOMMessage request = msgCtxs[i].recreateTOMMessage(operations[i]);
+                    TOMMessage request = msgCtxs[i].recreateTOMMessage(operations[i]);                    
                     request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
                             results[i], controller.getCurrentViewId(), request.getReqType());
                     
@@ -143,10 +163,19 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
             
             if (isCheckpoint || (this.results.size() % config.getLogBatchLimit() == 0)) {
                 
+                byte[] transHash = log.markEndTransactions();
+                
+                log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, transHash, lastBlockHash);
+                
+                lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, transHash, lastBlockHash);
+                nextNumber++;
+                                
                 replies = new TOMMessage[this.results.size()];
                 
                 this.results.toArray(replies);
                 this.results.clear();
+                
+                if (isCheckpoint) log.clearCached();
                 
                 logger.info("Synching log at CID " + cid);
                 
@@ -155,12 +184,32 @@ public abstract class BlockchainRecoverable implements Recoverable, BatchExecuta
             }
             
             return replies;
-        } catch (IOException ex) {
+        } catch (IOException | NoSuchAlgorithmException ex) {
             logger.error("Error while logging/executing batch for CID " + cid, ex);
             return new TOMMessage[0];
         }
                 
     }
+    
+    private byte[] computeBlockHash(int number, int lastCheckpoint, int lastReconf,  byte[] transHash,  byte[] prevBlock) throws NoSuchAlgorithmException {
+    
+        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES * 5 + (prevBlock.length + transHash.length));
+        
+        buff.putInt(number);
+        buff.putInt(lastCheckpoint);
+        buff.putInt(lastReconf);
+
+        buff.putInt(transHash.length);
+        buff.put(transHash);
+        
+        buff.putInt(prevBlock.length);
+        buff.put(prevBlock);
+
+        MessageDigest md = TOMUtil.getHashEngine();
+        
+        return md.digest(buff.array());
+    }
+    
     
     public boolean verifyBatch(byte[][] commands, MessageContext[] msgCtxs){
         

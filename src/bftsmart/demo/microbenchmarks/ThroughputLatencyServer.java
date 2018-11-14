@@ -17,8 +17,7 @@ package bftsmart.demo.microbenchmarks;
 
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ServiceReplica;
-import bftsmart.tom.server.defaultservices.blockchain.BlockchainRecoverable;
-import bftsmart.tom.server.durability.DurabilityCoordinator;
+import bftsmart.tom.server.defaultservices.blockchain.WeakBlockchainRecoverable;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayInputStream;
@@ -40,7 +39,7 @@ import java.util.Base64;
 /**
  * Simple server that just acknowledge the reception of a request.
  */
-public final class ThroughputLatencyServer extends BlockchainRecoverable {
+public final class ThroughputLatencyServer extends WeakBlockchainRecoverable {
     
     private int interval;
     private byte[] reply;
