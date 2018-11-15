@@ -45,12 +45,10 @@ import bftsmart.tom.server.defaultservices.DefaultReplier;
 import bftsmart.tom.util.KeyLoader;
 import bftsmart.tom.util.ShutdownHookThread;
 import bftsmart.tom.util.TOMUtil;
-import java.io.IOException;
 import java.security.Provider;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.logging.Level;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -467,7 +465,7 @@ public class ServiceReplica {
             
             byte [] lastCheckpointHash = null;
 
-            if (cid % SVController.getStaticConf().getCheckpointPeriod() == 0) {
+            /*if (cid % SVController.getStaticConf().getCheckpointPeriod() == 0) {
                 
                 lastCheckpointHash = executor.takeCheckpointHash(cid);
 
@@ -500,7 +498,7 @@ public class ServiceReplica {
                 } catch (InterruptedException ex) {
                     logger.error("Error while getting checkpoint for CID " + cid, ex);
                 }
-            }
+            }*/
             
             logger.debug("BATCHEXECUTOR END");
         }

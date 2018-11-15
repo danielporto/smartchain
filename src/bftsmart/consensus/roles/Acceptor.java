@@ -363,12 +363,12 @@ public final class Acceptor {
                 //try {
                 
                     //byte[][] hashes = fetchHashes(cid);
-                    byte[] hash = fetchHash(cid);
+                    //byte[] hash = fetchHash(cid);
                     
                     // Create a cryptographic proof for this ACCEPT message
                     logger.debug("Creating cryptographic proof for speculative ACCEPT message from consensus " + cid);
                     
-                    cm.setCheckpointHash(hash);
+                    //cm.setCheckpointHash(hash);
                     //cm.setLastBlockHash(hashes[1]);
                     
                     insertProof(cm, epoch.deserializedPropValue);
