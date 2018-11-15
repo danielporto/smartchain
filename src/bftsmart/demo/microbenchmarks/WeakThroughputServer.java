@@ -177,7 +177,6 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
             
             if (randomAccessFile != null) {
                 
-                randomAccessFile.seek(randomAccessFile.length());
                 randomAccessFile.write(request);
             }
         } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException | CertificateException | IOException ex) {
