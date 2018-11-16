@@ -42,6 +42,8 @@ public class BatchLogger {
     private MessageDigest transDigest;
     private MessageDigest resultsDigest;
     
+    private LinkedList<ByteBuffer> buffers;
+    
     private BatchLogger() {
         //not to be used
         
@@ -58,11 +60,13 @@ public class BatchLogger {
         logPath = logDir + String.valueOf(this.id) + "." + System.currentTimeMillis() + ".log";
         
         logger.debug("Logging to file " + logPath);
-        log = new RandomAccessFile(logPath, "rw");
+        log = new RandomAccessFile(logPath, "rwd");
         channel = log.getChannel();
          
         transDigest = TOMUtil.getHashEngine();
         resultsDigest = TOMUtil.getHashEngine();
+        
+        buffers = new LinkedList<>();
 
     }
     
@@ -94,7 +98,8 @@ public class BatchLogger {
         
         buff.flip();
         
-        channel.write(buff);
+        //channel.write(buff);
+        buffers.add(buff);
         return new byte[][] {transDigest.digest(), resultsDigest.digest()};
     }
     
@@ -119,7 +124,8 @@ public class BatchLogger {
         
         buff.flip();
                 
-        channel.write(buff);
+        //channel.write(buff);
+        buffers.add(buff);
         
         logger.debug("wrote header for block #{} to disk", number);
     }
@@ -148,7 +154,8 @@ public class BatchLogger {
         
         buff.flip();
         
-        channel.write(buff);
+        //channel.write(buff);
+        buffers.add(buff);
         
         logger.debug("wrote certificate to disk");
     }
@@ -199,7 +206,8 @@ public class BatchLogger {
         
         buff.flip();
         
-        channel.write(buff);
+        //channel.write(buff);
+        buffers.add(buff);
         
         logger.debug("wrote transactions to disk");
 
@@ -229,7 +237,8 @@ public class BatchLogger {
         
         buff.flip();
         
-        channel.write(buff);
+        //channel.write(buff);
+        buffers.add(buff);
         
         logger.debug("wrote transactions to disk");
 
@@ -240,7 +249,11 @@ public class BatchLogger {
         logger.debug("synching log to disk");
 
         //log.getFD().sync();
-        channel.force(false);
+        //channel.force(false);
+        
+        ByteBuffer[] bbs = new ByteBuffer[buffers.size()];
+        buffers.toArray(bbs);
+        channel.write(bbs);
         
         logger.debug("synced log to disk");
     }
