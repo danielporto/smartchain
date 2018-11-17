@@ -56,6 +56,7 @@ public class TOMConfiguration extends Configuration {
     private boolean parallelLog;
     private boolean logToDisk;
     private int logBatchLimit;
+    private String logBatchType;
     private boolean isToWriteCkpsToDisk;
     private boolean syncCkp;
     private boolean isBFT;
@@ -179,14 +180,13 @@ public class TOMConfiguration extends Configuration {
                 useMACs = Integer.parseInt(s);
             }
 
-            //Force this codebase to always generate signatures for client requests
             useSignatures = 1;
-            /*s = (String) configs.remove("system.communication.useSignatures");
+            s = (String) configs.remove("system.communication.useSignatures");
             if (s == null) {
                 useSignatures = 0;
             } else {
                 useSignatures = Integer.parseInt(s);
-            }*/
+            }
 
             s = (String) configs.remove("system.totalordermulticast.state_transfer");
             if (s == null) {
@@ -283,6 +283,13 @@ public class TOMConfiguration extends Configuration {
                     logBatchLimit = 10;
             }
 
+            s = (String) configs.remove("system.totalordermulticast.log_batch_type");
+            if(s == null || (!s.equalsIgnoreCase("buffer") && !s.equalsIgnoreCase("parallel"))){
+                logBatchType = "buffer";
+            }else{
+                logBatchType = s;
+            }
+            
             s = (String) configs
                             .remove("system.totalordermulticast.sync_log");
             if (s != null) {
@@ -526,4 +533,10 @@ public class TOMConfiguration extends Configuration {
     public String getBindAddress() {
         return bindAddress;
     }
+    
+    public String getLogBatchType() {
+
+        return logBatchType;
+    }
+
 }

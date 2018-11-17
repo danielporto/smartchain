@@ -73,7 +73,9 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
         
             //batchDir = config.getConfigHome().concat(System.getProperty("file.separator")) +
             batchDir =    "files".concat(System.getProperty("file.separator"));
-            log = BatchLogger.getInstance(config.getProcessId(), batchDir);
+            log = config.getLogBatchType().equalsIgnoreCase("buffer") ? 
+                    BufferBatchLogger.getInstance(config.getProcessId(), batchDir) : 
+                    ParallelBatchLogger.getInstance(config.getProcessId(), batchDir);
             
             //write genesis block
             byte[] transHash = log.markEndTransactions()[0];
@@ -184,10 +186,10 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             }
             
             return replies;
-        } catch (IOException | NoSuchAlgorithmException ex) {
+        } catch (IOException | NoSuchAlgorithmException | InterruptedException ex) {
             logger.error("Error while logging/executing batch for CID " + cid, ex);
             return new TOMMessage[0];
-        }
+        } 
                 
     }
     

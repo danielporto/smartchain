@@ -95,7 +95,9 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         
             //batchDir = config.getConfigHome().concat(System.getProperty("file.separator")) +
             batchDir =    "files".concat(System.getProperty("file.separator"));
-            log = BatchLogger.getInstance(config.getProcessId(), batchDir);
+            log = config.getLogBatchType().equalsIgnoreCase("buffer") ? 
+                    BufferBatchLogger.getInstance(config.getProcessId(), batchDir) : 
+                    ParallelBatchLogger.getInstance(config.getProcessId(), batchDir);
             
             //write genesis block
             byte[][] hashes = log.markEndTransactions();
