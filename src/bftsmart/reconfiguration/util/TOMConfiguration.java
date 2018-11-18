@@ -284,7 +284,7 @@ public class TOMConfiguration extends Configuration {
             }
 
             s = (String) configs.remove("system.totalordermulticast.log_batch_type");
-            if(s == null || (!s.equalsIgnoreCase("buffer") && !s.equalsIgnoreCase("parallel"))){
+            if(s == null || (!s.equalsIgnoreCase("buffer") && !s.equalsIgnoreCase("parallel") && !s.equalsIgnoreCase("async"))){
                 logBatchType = "buffer";
             }else{
                 logBatchType = s;

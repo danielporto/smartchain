@@ -3,10 +3,11 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package bftsmart.tom.server.defaultservices.blockchain;
+package bftsmart.tom.server.defaultservices.blockchain.logger;
 
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.server.defaultservices.CommandsInfo;
+import bftsmart.tom.server.defaultservices.blockchain.BatchLogger;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -27,7 +28,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author joao
  */
-public class BufferBatchLogger implements BatchLogger {
+public class AsyncBatchLogger implements BatchLogger {
     
     private Logger logger = LoggerFactory.getLogger(this.getClass());
     
@@ -41,15 +42,13 @@ public class BufferBatchLogger implements BatchLogger {
     private String logPath;
     private MessageDigest transDigest;
     private MessageDigest resultsDigest;
-    
-    private LinkedList<ByteBuffer> buffers;
-    
-    private BufferBatchLogger() {
+        
+    private AsyncBatchLogger() {
         //not to be used
         
     }
     
-    private BufferBatchLogger(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
+    private AsyncBatchLogger(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
         this.id = id;
         cachedBatches = new LinkedList<>();
         cachedResults = new LinkedList<>();
@@ -60,20 +59,18 @@ public class BufferBatchLogger implements BatchLogger {
         logPath = logDir + String.valueOf(this.id) + "." + System.currentTimeMillis() + ".log";
         
         logger.debug("Logging to file " + logPath);
-        log = new RandomAccessFile(logPath, "rwd");
+        log = new RandomAccessFile(logPath, "rw");
         channel = log.getChannel();
          
         transDigest = TOMUtil.getHashEngine();
         resultsDigest = TOMUtil.getHashEngine();
-        
-        buffers = new LinkedList<>();
-        
-        logger.info("Buffer batch logger instantiated");
+                
+        logger.info("Asynchronous batch logger instantiated");
 
     }
     
     public static BatchLogger getInstance(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
-        BufferBatchLogger ret = new BufferBatchLogger(id, logDir);
+        AsyncBatchLogger ret = new AsyncBatchLogger(id, logDir);
         return ret;
     }
     
@@ -100,8 +97,7 @@ public class BufferBatchLogger implements BatchLogger {
         
         buff.flip();
         
-        //channel.write(buff);
-        buffers.add(buff);
+        channel.write(buff);
         return new byte[][] {transDigest.digest(), resultsDigest.digest()};
     }
     
@@ -126,8 +122,7 @@ public class BufferBatchLogger implements BatchLogger {
         
         buff.flip();
                 
-        //channel.write(buff);
-        buffers.add(buff);
+        channel.write(buff);
         
         logger.debug("wrote header for block #{} to disk", number);
     }
@@ -156,8 +151,7 @@ public class BufferBatchLogger implements BatchLogger {
         
         buff.flip();
         
-        //channel.write(buff);
-        buffers.add(buff);
+        channel.write(buff);
         
         logger.debug("wrote certificate to disk");
     }
@@ -208,8 +202,7 @@ public class BufferBatchLogger implements BatchLogger {
         
         buff.flip();
         
-        //channel.write(buff);
-        buffers.add(buff);
+        channel.write(buff);
         
         logger.debug("wrote transactions to disk");
 
@@ -239,8 +232,7 @@ public class BufferBatchLogger implements BatchLogger {
         
         buff.flip();
         
-        //channel.write(buff);
-        buffers.add(buff);
+        channel.write(buff);
         
         logger.debug("wrote transactions to disk");
 
@@ -251,11 +243,6 @@ public class BufferBatchLogger implements BatchLogger {
         logger.debug("synching log to disk");
 
         //log.getFD().sync();
-        //channel.force(false);
-        
-        ByteBuffer[] bbs = new ByteBuffer[buffers.size()];
-        buffers.toArray(bbs);
-        channel.write(bbs);
         channel.force(false);
         
         logger.debug("synced log to disk");

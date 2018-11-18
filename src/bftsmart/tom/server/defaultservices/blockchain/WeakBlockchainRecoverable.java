@@ -5,6 +5,8 @@
  */
 package bftsmart.tom.server.defaultservices.blockchain;
 
+import bftsmart.tom.server.defaultservices.blockchain.logger.ParallelBatchLogger;
+import bftsmart.tom.server.defaultservices.blockchain.logger.BufferBatchLogger;
 import bftsmart.consensus.messages.ConsensusMessage;
 import bftsmart.reconfiguration.ServerViewController;
 import bftsmart.reconfiguration.util.TOMConfiguration;
@@ -16,6 +18,7 @@ import bftsmart.tom.ReplicaContext;
 import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.server.BatchExecutable;
 import bftsmart.tom.server.Recoverable;
+import bftsmart.tom.server.defaultservices.blockchain.logger.AsyncBatchLogger;
 import bftsmart.tom.util.BatchBuilder;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
@@ -73,9 +76,14 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
         
             //batchDir = config.getConfigHome().concat(System.getProperty("file.separator")) +
             batchDir =    "files".concat(System.getProperty("file.separator"));
-            log = config.getLogBatchType().equalsIgnoreCase("buffer") ? 
-                    BufferBatchLogger.getInstance(config.getProcessId(), batchDir) : 
-                    ParallelBatchLogger.getInstance(config.getProcessId(), batchDir);
+            
+            if (config.getLogBatchType().equalsIgnoreCase("buffer")) {
+                log = BufferBatchLogger.getInstance(config.getProcessId(), batchDir);
+            } else if(config.getLogBatchType().equalsIgnoreCase("parallel")) {
+                log = ParallelBatchLogger.getInstance(config.getProcessId(), batchDir);
+            } else {
+                log = AsyncBatchLogger.getInstance(config.getProcessId(), batchDir);
+            }
             
             //write genesis block
             byte[] transHash = log.markEndTransactions()[0];
