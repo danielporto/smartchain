@@ -158,7 +158,7 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                         
             if (!noop) {
                 
-                byte[][] results = appExecuteBatch(operations, msgCtxs, false);
+                byte[][] results = executeBatch(operations, msgCtxs, isCheckpoint);
                 //replies = new TOMMessage[results.length];
                 
                 for (int i = 0; i < results.length; i++) {
@@ -285,8 +285,8 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
     
     @Override
     public byte[][] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
-        //never used
-        return null;
+
+        return appExecuteBatch(operations, msgCtxs, true);
     }
  
     /**

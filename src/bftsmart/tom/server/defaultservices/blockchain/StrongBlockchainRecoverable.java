@@ -216,7 +216,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                         
             if (!noop) {
                 
-                byte[][] results = appExecuteBatch(operations, msgCtxs, false);
+                byte[][] results = executeBatch(operations, msgCtxs, isCheckpoint);
                 //replies = new TOMMessage[results.length];
                 
                 log.storeResults(results);
@@ -398,8 +398,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
  
     @Override
     public byte[][] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
-        //never used
-        return null;
+        
+        return appExecuteBatch(operations, msgCtxs, true);
     }
     
     /**
