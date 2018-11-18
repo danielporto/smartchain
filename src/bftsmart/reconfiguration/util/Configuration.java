@@ -211,7 +211,7 @@ public class Configuration {
                     throw new RuntimeException("Unsupported signature algorithm, custom keyloader required");
                 }
             }
-                        
+            
             TOMUtil.init(hmacAlgorithm, secretKeyAlgorithm, keyLoader.getSignatureAlgorithm(), hashAlgorithm,
                     hmacAlgorithmProvider, secretKeyAlgorithmProvider, signatureAlgorithmProvider, hashAlgorithmProvider);
 
