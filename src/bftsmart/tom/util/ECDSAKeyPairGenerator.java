@@ -15,6 +15,7 @@ limitations under the License.
 */
 package bftsmart.tom.util;
 
+import bftsmart.reconfiguration.util.TOMConfiguration;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.security.Key;
@@ -22,6 +23,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.Security;
 import java.security.spec.ECGenParameterSpec;
 import org.apache.commons.codec.binary.Base64;
 
@@ -43,11 +45,11 @@ public class ECDSAKeyPairGenerator {
      * @param id the id of the process to generate key
      * @throws Exception something goes wrong when writing the files
      */
-    public void run(int id, String domainParam) throws Exception {
+    public void run(int id, String domainParam, String provider) throws Exception {
         
         
         ECGenParameterSpec specs = new ECGenParameterSpec(domainParam);
-        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("EC");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("EC",provider);
         keyGen.initialize(specs);
         
         KeyPair kp = keyGen.generateKeyPair();
@@ -78,12 +80,18 @@ public class ECDSAKeyPairGenerator {
         return Base64.encodeBase64String(keyBytes);
     }
 
-    public static void main(String[] args){
-        try{
-            new ECDSAKeyPairGenerator().run(Integer.parseInt(args[0]), args[1]);
-        }catch(Exception e){
-            System.err.println("Use: RSAKeyPairGenerator <id> <domain parameter>");
-        }
+    public static void main(String[] args) throws Exception{
+        
+        if (args.length < 2) System.err.println("Use: ECDSAKeyPairGenerator <id> <domain parameter> [config dir]");
+        String confHome = "";
+        if (args.length > 2) confHome = args[2];
+        
+        TOMConfiguration conf = new TOMConfiguration(Integer.parseInt(args[0]), confHome, null);
+        String provider = conf.getSignatureAlgorithmProvider();
+        
+        
+        new ECDSAKeyPairGenerator().run(Integer.parseInt(args[0]), args[1], provider);
+
     }
 
 }
