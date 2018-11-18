@@ -157,7 +157,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     }
 
     @Override
-    public byte[] executeUnordered(byte[] command, MessageContext msgCtx) {
+    public TOMMessage executeUnordered(int processID, int viewID, boolean isHashedReply, byte[] command, MessageContext msgCtx) {
         
         if (controller.isCurrentViewMember(msgCtx.getSender())) {
                         
@@ -193,10 +193,15 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                 mapLock.unlock();
             
             }
-            return new byte[0];
+            return null;
         }
         else {
-            return appExecuteUnordered(command, msgCtx);
+            
+            byte[] result = executeUnordered(command, msgCtx);
+         
+            if (isHashedReply) result = TOMUtil.computeHash(result);
+         
+            return getTOMMessage(processID, viewID, command, msgCtx, result);
         }
     }
 
@@ -402,6 +407,12 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     public byte[][] executeBatch(byte[][] operations, MessageContext[] msgCtxs) {
         
         return appExecuteBatch(operations, msgCtxs, true);
+    }
+    
+    @Override
+    public byte[] executeUnordered(byte[] command, MessageContext msgCtx) {
+        
+        return appExecuteUnordered(command, msgCtx);
     }
     
     /**
