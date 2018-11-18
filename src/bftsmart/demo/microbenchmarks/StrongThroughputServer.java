@@ -349,6 +349,5 @@ public final class StrongThroughputServer extends StrongBlockchainRecoverable {
     public byte[] getSnapshot() {
         return this.state;
     }
-
    
 }

@@ -33,6 +33,21 @@ public interface BatchExecutable extends Executable {
      * @param isCheckpoint Notify application that this consensus instance will require a checkpoint hash in its consensus proof
      * @return
      */
-    public TOMMessage[] executeBatch(byte[][] command, MessageContext[] msgCtx, boolean isCheckpoint);
+
+    public byte[][] executeBatch(byte[][] command, MessageContext[] msgCtx, boolean isCheckpoint);
+    
+    public default TOMMessage[] executeBatch(int processID, int viewID, byte[][] command, MessageContext[] msgCtx, boolean isCheckpoint) {
+        
+        TOMMessage[] replies = new TOMMessage[command.length];
+        
+        byte[][] results = executeBatch(command, msgCtx, isCheckpoint);
+        
+        for (int i = 0; i < results.length; i++) {
+
+            replies[i] = getTOMMessage(processID, viewID, command[i], msgCtx[i], results[i]);
+        }
+        
+        return replies;
+    }
 
 }

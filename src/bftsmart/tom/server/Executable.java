@@ -16,6 +16,8 @@ limitations under the License.
 package bftsmart.tom.server;
 
 import bftsmart.tom.MessageContext;
+import bftsmart.tom.core.messages.TOMMessage;
+import bftsmart.tom.util.TOMUtil;
 
 /**
  * 
@@ -45,4 +47,22 @@ public interface Executable {
      * @return Checkpoint hash up to the specified consensus instance
      */
     public byte[] takeCheckpointHash(int cid);
+
+    default TOMMessage getTOMMessage(int processID, int viewID, byte[] command, MessageContext msgCtx, byte[] result) {
+        
+        TOMMessage reply = msgCtx.recreateTOMMessage(command);
+        reply.reply = new TOMMessage(processID, reply.getSession(), reply.getSequence(), reply.getOperationId(),
+                    result, viewID, reply.getReqType());
+         
+         return reply;
+    }
+    
+    public default TOMMessage executeUnordered(int processID, int viewID, boolean isReplyHash, byte[] command, MessageContext msgCtx) {
+        
+         byte[] result = executeUnordered(command, msgCtx);
+         
+         if (isReplyHash) result = TOMUtil.computeHash(result);
+         
+         return getTOMMessage(processID, viewID, command, msgCtx, result);
+    }
 }

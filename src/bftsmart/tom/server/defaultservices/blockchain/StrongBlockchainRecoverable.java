@@ -147,13 +147,13 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     @Override
     public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
         
-        executeBatch(operations, msgCtxs, isCheckpoint, true);
+        executeBatch(-1,-1, operations, msgCtxs, isCheckpoint, true);
     }
 
     @Override
-    public TOMMessage[] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
+    public TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
         
-        return executeBatch(operations, msgCtxs, isCheckpoint, false);
+        return executeBatch(processID, viewID, operations, msgCtxs, isCheckpoint, false);
     }
 
     @Override
@@ -205,7 +205,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         return TOMUtil.computeHash(getSnapshot());
     }
     
-    private TOMMessage[] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint, boolean noop) {
+    private TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint, boolean noop) {
         
         int cid = msgCtxs[0].getConsensusId();
         TOMMessage[] replies = new TOMMessage[0];
@@ -223,9 +223,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                 
                 for (int i = 0; i < results.length; i++) {
                     
-                    TOMMessage request = msgCtxs[i].recreateTOMMessage(operations[i]);                    
-                    request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
-                            results[i], controller.getCurrentViewId(), request.getReqType());
+                    TOMMessage request = getTOMMessage(processID,viewID,operations[i], msgCtxs[i], results[i]);
                     
                     this.results.add(request);
                 }
@@ -398,6 +396,12 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         return ret;
     }
  
+    @Override
+    public byte[][] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
+        //never used
+        return null;
+    }
+    
     /**
      * Given a snapshot received from the state transfer protocol, install it
      * @param state The serialized snapshot

@@ -72,11 +72,11 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
     }
 
     @Override
-    public TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean takesnapshot) {
+    public byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean takesnapshot) {
         return executeBatch(commands, msgCtxs, takesnapshot, false);
     }
 
-    private TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean isCheckpoint,  boolean noop) {
+    private byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean isCheckpoint,  boolean noop) {
 
         int cid = msgCtxs[msgCtxs.length-1].getConsensusId();
 
@@ -85,7 +85,7 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
         int[] cids = consensusIds(msgCtxs);
         int checkpointIndex = findCheckpointPosition(cids);
 
-        TOMMessage[] replies = new TOMMessage[commands.length];
+        byte[][] replies = new byte[commands.length][];
 
         if (checkpointIndex == -1) {
 
@@ -93,16 +93,7 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
 
                 stateLock.lock();
                 
-                byte[][] results = appExecuteBatch(commands, msgCtxs, true);
-                            
-                for (int i = 0; i < results.length; i++) {
-
-                    TOMMessage request = msgCtxs[i].recreateTOMMessage(commands[i]);
-                    request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
-                            results[i], controller.getCurrentViewId(), request.getReqType());
-
-                    replies[i] = request;
-                }
+                replies = appExecuteBatch(commands, msgCtxs, true);
                 
                 stateLock.unlock();
 
@@ -129,8 +120,8 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
                 firstHalfMsgCtx = msgCtxs;
             }
 
-            TOMMessage[] firstHalfReplies = new TOMMessage[firstHalf.length];
-            TOMMessage[] secondHalfReplies = new TOMMessage[secondHalf.length];
+            byte[][] firstHalfReplies = new byte[firstHalf.length][];
+            byte[][] secondHalfReplies = new byte[secondHalf.length][];
 
             // execute the first half
             cid = msgCtxs[checkpointIndex].getConsensusId();
@@ -138,16 +129,7 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
             if (!noop) {
                 stateLock.lock();
                 
-                byte[][] firstHalfResults = appExecuteBatch(firstHalf, firstHalfMsgCtx, true);
-                
-                for (int i = 0; i < firstHalfResults.length; i++) {
-
-                    TOMMessage request = msgCtxs[i].recreateTOMMessage(commands[i]);
-                    request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
-                            firstHalfResults[i], controller.getCurrentViewId(), request.getReqType());
-
-                    firstHalfReplies[i] = request;
-                }
+                firstHalfReplies = appExecuteBatch(firstHalf, firstHalfMsgCtx, true);
                 
                 stateLock.unlock();
             }
@@ -168,16 +150,7 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
                 if (!noop) {
                     stateLock.lock();
                     
-                    byte[][] secondHalfResults = appExecuteBatch(secondHalf, secondHalfMsgCtx, true);
-                    
-                    for (int i = 0; i < secondHalfResults.length; i++) {
-
-                        TOMMessage request = msgCtxs[i].recreateTOMMessage(commands[i]);
-                        request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
-                                secondHalfResults[i], controller.getCurrentViewId(), request.getReqType());
-
-                        secondHalfReplies[i] = request;
-                    }
+                    secondHalfReplies = appExecuteBatch(secondHalf, secondHalfMsgCtx, true);
                     
                     stateLock.unlock();
                 }

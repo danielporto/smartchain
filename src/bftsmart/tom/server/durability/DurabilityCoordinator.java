@@ -81,16 +81,16 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 	}
 
         @Override
-        public TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean isCheckpoint) {
+        public byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean isCheckpoint) {
             return executeBatch(commands, msgCtxs, isCheckpoint, false);
         }
     
-        private TOMMessage[] executeBatch(byte[][] commands, MessageContext[] msgCtx, boolean isCheckpoint, boolean noop) {
+        private byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtx, boolean isCheckpoint, boolean noop) {
 		int cid = msgCtx[msgCtx.length-1].getConsensusId();
 
 		int[] cids = consensusIds(msgCtx);
 		int checkpointIndex = findCheckpointPosition(cids);
-		TOMMessage[] replies = new TOMMessage[commands.length];
+		byte[][] replies = new byte[commands.length][];
 
 		// During the consensus IDs contained in this batch of commands none of the
 		// replicas is supposed to take a checkpoint, so the replica will only execute
@@ -100,16 +100,7 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
                     if (!noop) {
                         stateLock.lock();
                         
-			byte[][] results = appExecuteBatch(commands, msgCtx);
-                            
-                        for (int i = 0; i < results.length; i++) {
-
-                            TOMMessage request = msgCtx[i].recreateTOMMessage(commands[i]);
-                            request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
-                                    results[i], controller.getCurrentViewId(), request.getReqType());
-
-                            replies[i] = request;
-                        }
+			replies = appExecuteBatch(commands, msgCtx);
                 
 			stateLock.unlock();
                     }
@@ -134,24 +125,15 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 			} else
 				firstHalfMsgCtx = msgCtx;
 
-			TOMMessage[] firstHalfReplies = new TOMMessage[firstHalf.length];
-                        TOMMessage[] secondHalfReplies = new TOMMessage[secondHalf.length];
+			byte[][] firstHalfReplies = new byte[firstHalf.length][];
+                        byte[][] secondHalfReplies = new byte[secondHalf.length][];
 
 			// execute the first half
 			cid = msgCtx[checkpointIndex].getConsensusId();
 			
                         if (!noop) {
                             stateLock.lock();
-                            byte[][] firstHalfResults = appExecuteBatch(firstHalf, firstHalfMsgCtx);
-                
-                            for (int i = 0; i < firstHalfResults.length; i++) {
-
-                                TOMMessage request = msgCtx[i].recreateTOMMessage(commands[i]);
-                                request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
-                                        firstHalfResults[i], controller.getCurrentViewId(), request.getReqType());
-
-                                firstHalfReplies[i] = request;
-                            }
+                            firstHalfReplies = appExecuteBatch(firstHalf, firstHalfMsgCtx);
                             
                             stateLock.unlock();
                         }
@@ -178,16 +160,7 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
                                     
                                     stateLock.lock();
                                     
-                                    byte[][] secondHalfResults = appExecuteBatch(secondHalf, secondHalfMsgCtx);
-                    
-                                    for (int i = 0; i < secondHalfResults.length; i++) {
-
-                                        TOMMessage request = msgCtx[i].recreateTOMMessage(commands[i]);
-                                        request.reply = new TOMMessage(config.getProcessId(), request.getSession(), request.getSequence(), request.getOperationId(),
-                                                secondHalfResults[i], controller.getCurrentViewId(), request.getReqType());
-
-                                        secondHalfReplies[i] = request;
-                                    }
+                                    secondHalfReplies = appExecuteBatch(secondHalf, secondHalfMsgCtx);
                                     
                                     stateLock.unlock();
                                     
