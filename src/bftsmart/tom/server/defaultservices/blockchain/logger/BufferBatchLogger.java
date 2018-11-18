@@ -96,10 +96,7 @@ public class BufferBatchLogger implements BatchLogger {
     
     public byte[][] markEndTransactions() throws IOException {
         
-        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES);
-        buff.putInt(-1);
-        
-        buff.flip();
+        ByteBuffer buff = getEOT();
         
         //channel.write(buff);
         buffers.add(buff);
@@ -110,22 +107,7 @@ public class BufferBatchLogger implements BatchLogger {
      
         logger.debug("writting header for block #{} to disk", number);
         
-        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES * 6 + (prevBlock.length + transHash.length + resultsHash.length));
-        
-        buff.putInt(number);
-        buff.putInt(lastCheckpoint);
-        buff.putInt(lastReconf);
-
-        buff.putInt(transHash.length);
-        buff.put(transHash);
-        
-        buff.putInt(resultsHash.length);
-        buff.put(resultsHash);
-        
-        buff.putInt(prevBlock.length);
-        buff.put(prevBlock);
-        
-        buff.flip();
+        ByteBuffer buff = prepareHeader(number, lastCheckpoint, lastReconf, transHash, resultsHash, prevBlock);
                 
         //channel.write(buff);
         buffers.add(buff);
@@ -137,25 +119,7 @@ public class BufferBatchLogger implements BatchLogger {
         
         logger.debug("writting certificate to disk");
         
-        
-        int certSize = 0;
-        for (int id : sigs.keySet()) {
-            
-            certSize += sigs.get(id).length;
-        }
-        
-        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES * (1 + (sigs.size() * 2)) + (certSize));
-        
-        buff.putInt(sigs.size());
-        
-        for (int id : sigs.keySet()) {
-        
-            buff.putInt(id);
-            buff.putInt(sigs.get(id).length);
-            buff.put(sigs.get(id));
-        }
-        
-        buff.flip();
+        ByteBuffer buff = prepareCertificate(sigs);
         
         //channel.write(buff);
         buffers.add(buff);
@@ -189,25 +153,12 @@ public class BufferBatchLogger implements BatchLogger {
         
         logger.debug("writting transactios to disk");
         
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        ObjectOutputStream oos = new ObjectOutputStream(bos);
-        oos.writeObject(commandsInfo);
-        oos.flush();
-
-        byte[] transBytes = bos.toByteArray();
-        oos.close();
-        bos.close();
+        byte[] transBytes = serializeTransactions(commandsInfo);
         
         //update the transactions hash for the entire block
         transDigest.update(transBytes);
 
-        ByteBuffer buff = ByteBuffer.allocate((Integer.BYTES * 2) + transBytes.length);
-        
-        buff.putInt(cid);
-        buff.putInt(transBytes.length);
-        buff.put(transBytes);
-        
-        buff.flip();
+        ByteBuffer buff = prepareTransactions(cid, transBytes);
         
         //channel.write(buff);
         buffers.add(buff);
@@ -218,32 +169,20 @@ public class BufferBatchLogger implements BatchLogger {
     
     private void writeResultsToDisk(byte[][] results) throws IOException {
         
-        logger.debug("writting transactios to disk");
+        logger.debug("writting results to disk");
         
-        int resultsSize = 0;
-        for (byte[] result : results) {
-            resultsSize += result.length;
-        }
+        for (byte[] result : results) { //update the results hash for the entire block
         
-        ByteBuffer buff = ByteBuffer.allocate(Integer.BYTES * (1 + results.length) + (resultsSize));
-        
-        buff.putInt(results.length);
-        
-        for (byte[] result : results) {
-        
-            //update the results hash for the entire block
             resultsDigest.update(result);
 
-            buff.putInt(result.length);
-            buff.put(result);
         }
         
-        buff.flip();
+        ByteBuffer buff = prepareResults(results);
         
         //channel.write(buff);
         buffers.add(buff);
         
-        logger.debug("wrote transactions to disk");
+        logger.debug("wrote results to disk");
 
     }
     
