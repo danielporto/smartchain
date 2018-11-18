@@ -72,11 +72,11 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
     }
 
     @Override
-    public byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean takesnapshot) {
-        return executeBatch(commands, msgCtxs, takesnapshot, false);
+    public byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs) {
+        return executeBatch(commands, msgCtxs, false);
     }
 
-    private byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean isCheckpoint,  boolean noop) {
+    private byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean noop) {
 
         int cid = msgCtxs[msgCtxs.length-1].getConsensusId();
 
@@ -431,9 +431,9 @@ public abstract class DefaultRecoverable implements Recoverable, BatchExecutable
     }
     
     @Override
-    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
+    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs) {
         
-        executeBatch(operations, msgCtxs, true, isCheckpoint);
+        executeBatch(operations, msgCtxs, true);
 
     }
     

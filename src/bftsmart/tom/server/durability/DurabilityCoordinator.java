@@ -81,11 +81,11 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
 	}
 
         @Override
-        public byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs, boolean isCheckpoint) {
-            return executeBatch(commands, msgCtxs, isCheckpoint, false);
+        public byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtxs) {
+            return executeBatch(commands, msgCtxs, false);
         }
     
-        private byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtx, boolean isCheckpoint, boolean noop) {
+        private byte[][] executeBatch(byte[][] commands, MessageContext[] msgCtx, boolean noop) {
 		int cid = msgCtx[msgCtx.length-1].getConsensusId();
 
 		int[] cids = consensusIds(msgCtx);
@@ -438,9 +438,9 @@ public abstract class DurabilityCoordinator implements Recoverable, BatchExecuta
         }
 
         @Override
-    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
+    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs) {
         
-        executeBatch(operations, msgCtxs, isCheckpoint, true);
+        executeBatch(operations, msgCtxs, true);
 
     }
     

@@ -145,15 +145,15 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     }
 
     @Override
-    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
+    public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs) {
         
-        executeBatch(-1,-1, operations, msgCtxs, isCheckpoint, true);
+        executeBatch(-1,-1, operations, msgCtxs, true);
     }
 
     @Override
-    public TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
+    public TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs) {
         
-        return executeBatch(processID, viewID, operations, msgCtxs, isCheckpoint, false);
+        return executeBatch(processID, viewID, operations, msgCtxs, false);
     }
 
     @Override
@@ -205,7 +205,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         return TOMUtil.computeHash(getSnapshot());
     }
     
-    private TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint, boolean noop) {
+    private TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs, boolean noop) {
         
         int cid = msgCtxs[0].getConsensusId();
         TOMMessage[] replies = new TOMMessage[0];
@@ -216,7 +216,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                         
             if (!noop) {
                 
-                byte[][] results = executeBatch(operations, msgCtxs, isCheckpoint);
+                byte[][] results = executeBatch(operations, msgCtxs);
                 //replies = new TOMMessage[results.length];
                 
                 log.storeResults(results);
@@ -228,6 +228,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                     this.results.add(request);
                 }
             }
+            
+            boolean isCheckpoint = cid % config.getCheckpointPeriod() == 0;
             
             if (isCheckpoint || (this.results.size() % config.getLogBatchLimit() == 0)) {
                 
@@ -397,7 +399,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     }
  
     @Override
-    public byte[][] executeBatch(byte[][] operations, MessageContext[] msgCtxs, boolean isCheckpoint) {
+    public byte[][] executeBatch(byte[][] operations, MessageContext[] msgCtxs) {
         
         return appExecuteBatch(operations, msgCtxs, true);
     }

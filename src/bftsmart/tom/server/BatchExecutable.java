@@ -34,13 +34,13 @@ public interface BatchExecutable extends Executable {
      * @return
      */
 
-    public byte[][] executeBatch(byte[][] command, MessageContext[] msgCtx, boolean isCheckpoint);
+    public byte[][] executeBatch(byte[][] command, MessageContext[] msgCtx);
     
-    public default TOMMessage[] executeBatch(int processID, int viewID, byte[][] command, MessageContext[] msgCtx, boolean isCheckpoint) {
+    public default TOMMessage[] executeBatch(int processID, int viewID, byte[][] command, MessageContext[] msgCtx) {
         
         TOMMessage[] replies = new TOMMessage[command.length];
         
-        byte[][] results = executeBatch(command, msgCtx, isCheckpoint);
+        byte[][] results = executeBatch(command, msgCtx);
         
         for (int i = 0; i < results.length; i++) {
 

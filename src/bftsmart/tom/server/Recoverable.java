@@ -91,6 +91,6 @@ public interface Recoverable {
      * @param isCheckpoint Notify application that this consensus instance will require a checkpoint hash in its consensus proof
      * msgCtx.getConsensusId() will be equal to CID.
      */
-    public void noOp(int CID, byte[][] operations, MessageContext msgCtx[], boolean isCheckpoint);
+    public void noOp(int CID, byte[][] operations, MessageContext msgCtx[]);
 	
 }
