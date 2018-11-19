@@ -153,6 +153,7 @@ public final class StrongThroughputServer extends StrongBlockchainRecoverable {
                 bb.flip();
                 
                 channel.write(bb);
+                channel.force(false);
             } catch (IOException ex) {
                 Logger.getLogger(StrongThroughputServer.class.getName()).log(Level.SEVERE, null, ex);
                 

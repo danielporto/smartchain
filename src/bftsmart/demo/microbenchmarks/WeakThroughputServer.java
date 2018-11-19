@@ -153,6 +153,7 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
                 bb.flip();
                 
                 channel.write(bb);
+                channel.force(false);
             } catch (IOException ex) {
                 Logger.getLogger(WeakThroughputServer.class.getName()).log(Level.SEVERE, null, ex);
                 
