@@ -9,11 +9,9 @@ import bftsmart.tom.MessageContext;
 import bftsmart.tom.server.defaultservices.CommandsInfo;
 import bftsmart.tom.server.defaultservices.blockchain.BatchLogger;
 import bftsmart.tom.util.TOMUtil;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -43,7 +41,7 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
     private LinkedList<CommandsInfo> cachedBatches;
     private LinkedList<byte[][]> cachedResults;
     private RandomAccessFile log;
-    private FileChannel channel;
+    //private FileChannel channel;
     private String logPath;
     private MessageDigest transDigest;
     private MessageDigest resultsDigest;
@@ -74,7 +72,7 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
         
         logger.debug("Logging to file " + logPath);
         log = new RandomAccessFile(logPath, "rwd");
-        channel = log.getChannel();
+        //channel = log.getChannel();
          
         transDigest = TOMUtil.getHashEngine();
         resultsDigest = TOMUtil.getHashEngine();
@@ -252,8 +250,9 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
                 ByteBuffer[] array = new ByteBuffer[list.size()];
                 list.toArray(array);
                 
-                channel.write(array);
-                channel.force(false);
+                //channel.write(array);
+                //channel.force(false);
+                log.write(serializeByteBuffers(array));
                 
                 if (array[array.length-1].capacity() == 0) {
                     

@@ -126,6 +126,44 @@ public interface BatchLogger {
         return buff;
     }
     
+    default byte[] serializeByteBuffers(ByteBuffer[] buffs) {
+        
+        byte[][] arrays = new byte[buffs.length][];
+        
+        for (int i = 0; i < buffs.length; i++) {
+            
+            arrays[i] = buffs[i].array();
+        }
+        
+        return concatenate(arrays);
+    }
+    
+    default byte[] concatenate(byte[][] bytes) {
+
+        int totalLength = 0;
+        for (byte[] b : bytes) {
+            if (b != null) {
+                totalLength += b.length;
+            }
+        }
+
+        byte[] concat = new byte[totalLength];
+        int last = 0;
+
+        for (int i = 0; i < bytes.length; i++) {
+            if (bytes[i] != null) {
+                for (int j = 0; j < bytes[i].length; j++) {
+                    concat[last + j] = bytes[i][j];
+                }
+
+                last += bytes[i].length;
+            }
+
+        }
+
+        return concat;
+    }
+    
     public void storeTransactions(int cid, byte[][] requests, MessageContext[] contexts) throws IOException, InterruptedException;
     
     public void storeResults(byte[][] results) throws IOException, InterruptedException;
