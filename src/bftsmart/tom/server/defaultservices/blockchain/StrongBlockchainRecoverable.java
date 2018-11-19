@@ -5,6 +5,7 @@
  */
 package bftsmart.tom.server.defaultservices.blockchain;
 
+import bftsmart.communication.ServerCommunicationSystem;
 import bftsmart.tom.server.defaultservices.blockchain.logger.ParallelBatchLogger;
 import bftsmart.tom.server.defaultservices.blockchain.logger.BufferBatchLogger;
 import bftsmart.consensus.messages.ConsensusMessage;
@@ -16,6 +17,7 @@ import bftsmart.statemanagement.standard.StandardStateManager;
 import bftsmart.tom.AsynchServiceProxy;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
+import bftsmart.tom.core.messages.ForwardedMessage;
 import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.server.BatchExecutable;
@@ -24,6 +26,7 @@ import bftsmart.tom.server.defaultservices.blockchain.logger.AsyncBatchLogger;
 import bftsmart.tom.util.BatchBuilder;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
@@ -35,6 +38,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -55,6 +59,11 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     private TOMConfiguration config;
     private ServerViewController controller;
     private StateManager stateManager;
+    private ServerCommunicationSystem commSystem;
+    
+    private int session;
+    private int requestID;
+    
     
     private BatchLogger log;
     private LinkedList<TOMMessage> results;
@@ -64,7 +73,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     private int lastReconfig;
     private byte[] lastBlockHash;
     
-    private AsynchServiceProxy proxy;
+    //private AsynchServiceProxy proxy;
     
     private ReentrantLock mapLock = new ReentrantLock();
     private Condition gotCertificate = mapLock.newCondition();
@@ -92,7 +101,14 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             config = replicaContext.getStaticConfiguration();
             controller = replicaContext.getSVController();
             
-            proxy = new AsynchServiceProxy(config.getProcessId());
+            commSystem = replicaContext.getServerCommunicationSystem();
+            
+            Random rand = new Random(System.nanoTime());
+            session = rand.nextInt();
+            requestID = 0;
+            
+            
+            //proxy = new AsynchServiceProxy(config.getProcessId());
         
             //batchDir = config.getConfigHome().concat(System.getProperty("file.separator")) +
             batchDir =    "files".concat(System.getProperty("file.separator"));
@@ -262,8 +278,9 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                 buff.putInt(mySig.length);
                 buff.put(mySig);
                 
-                int context = proxy.invokeAsynchRequest(buff.array(), null, TOMMessageType.UNORDERED_REQUEST);
-                proxy.cleanAsynchRequest(context);
+                //int context = proxy.invokeAsynchRequest(buff.array(), null, TOMMessageType.UNORDERED_REQUEST);
+                //proxy.cleanAsynchRequest(context);
+                sendCommit(buff.array());
                 
                 mapLock.lock();
                 
@@ -314,6 +331,31 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         } finally {
             if (mapLock.isHeldByCurrentThread()) mapLock.unlock();
         }
+    }
+    
+    private void sendCommit(byte[] payload) throws IOException {
+        
+        
+        TOMMessage commitMsg = new TOMMessage(config.getProcessId(),
+                session, requestID, requestID, payload, controller.getCurrentViewId(), TOMMessageType.UNORDERED_REQUEST);
+        
+        DataOutputStream dos = null;
+        byte[] data = null;
+                
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        dos = new DataOutputStream(baos);
+        commitMsg.wExternal(dos);
+        dos.flush();
+        data = baos.toByteArray();
+        
+        commitMsg.serializedMessage = data;
+        commitMsg.serializedMessageSignature = TOMUtil.signMessage(controller.getStaticConf().getPrivateKey(), data);
+        
+        commSystem.send(controller.getCurrentViewOtherAcceptors(),
+                    new ForwardedMessage(this.controller.getStaticConf().getProcessId(), commitMsg));
+        
+        requestID++;
+
     }
     
     private byte[] computeBlockHash(int number, int lastCheckpoint, int lastReconf,  byte[] transHash, byte[] resultsHash, byte[] prevBlock) throws NoSuchAlgorithmException {
