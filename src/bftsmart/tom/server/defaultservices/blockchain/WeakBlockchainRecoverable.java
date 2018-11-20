@@ -19,6 +19,7 @@ import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.server.BatchExecutable;
 import bftsmart.tom.server.Recoverable;
 import bftsmart.tom.server.defaultservices.blockchain.logger.AsyncBatchLogger;
+import bftsmart.tom.server.defaultservices.blockchain.logger.VoidBatchLogger;
 import bftsmart.tom.util.BatchBuilder;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
@@ -81,8 +82,10 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                 log = BufferBatchLogger.getInstance(config.getProcessId(), batchDir);
             } else if(config.getLogBatchType().equalsIgnoreCase("parallel")) {
                 log = ParallelBatchLogger.getInstance(config.getProcessId(), batchDir);
-            } else {
+            } else if(config.getLogBatchType().equalsIgnoreCase("async")) {
                 log = AsyncBatchLogger.getInstance(config.getProcessId(), batchDir);
+            } else {
+                log = VoidBatchLogger.getInstance(config.getProcessId(), batchDir);
             }
             
             //write genesis block

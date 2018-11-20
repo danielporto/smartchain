@@ -16,7 +16,6 @@ limitations under the License.
 package bftsmart.reconfiguration.util;
 
 import bftsmart.tom.util.KeyLoader;
-import java.security.Provider;
 import java.util.StringTokenizer;
 
 import java.util.regex.Pattern;
@@ -284,7 +283,8 @@ public class TOMConfiguration extends Configuration {
             }
 
             s = (String) configs.remove("system.totalordermulticast.log_batch_type");
-            if(s == null || (!s.equalsIgnoreCase("buffer") && !s.equalsIgnoreCase("parallel") && !s.equalsIgnoreCase("async"))){
+            if(s == null || (!s.equalsIgnoreCase("buffer") && !s.equalsIgnoreCase("parallel") 
+                    && !s.equalsIgnoreCase("async") && !s.equalsIgnoreCase("void"))){
                 logBatchType = "buffer";
             }else{
                 logBatchType = s;

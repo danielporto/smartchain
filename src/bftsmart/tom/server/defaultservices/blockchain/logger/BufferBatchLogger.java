@@ -198,7 +198,6 @@ public class BufferBatchLogger implements BatchLogger {
         channel.write(bbs);
         channel.force(false);
         
-        
         logger.debug("synced log to disk");
     }
     

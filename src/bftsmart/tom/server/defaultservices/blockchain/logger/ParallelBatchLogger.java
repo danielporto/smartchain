@@ -253,7 +253,7 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
                     //log.write(serializeByteBuffers(array));
                     channel.write(array);
                     channel.force(false);
-                
+                    
                 if (array[array.length-1].capacity() == 0) {
                     
                     logger.debug("I was told to sync");
