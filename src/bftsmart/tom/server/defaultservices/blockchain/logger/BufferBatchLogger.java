@@ -36,7 +36,7 @@ public class BufferBatchLogger implements BatchLogger {
     private LinkedList<CommandsInfo> cachedBatches;
     private LinkedList<byte[][]> cachedResults;
     private RandomAccessFile log;
-    //private FileChannel channel;
+    private FileChannel channel;
     private String logPath;
     private MessageDigest transDigest;
     private MessageDigest resultsDigest;
@@ -60,7 +60,7 @@ public class BufferBatchLogger implements BatchLogger {
         
         logger.debug("Logging to file " + logPath);
         log = new RandomAccessFile(logPath, "rwd");
-        //channel = log.getChannel();
+        channel = log.getChannel();
          
         transDigest = TOMUtil.getHashEngine();
         resultsDigest = TOMUtil.getHashEngine();
@@ -193,10 +193,11 @@ public class BufferBatchLogger implements BatchLogger {
         
         ByteBuffer[] bbs = new ByteBuffer[buffers.size()];
         buffers.toArray(bbs);
-        //channel.write(bbs);
-        //channel.force(false);
+
+        //log.write(serializeByteBuffers(bbs));
+        channel.write(bbs);
+        channel.force(false);
         
-        log.write(serializeByteBuffers(bbs));
         
         logger.debug("synced log to disk");
     }

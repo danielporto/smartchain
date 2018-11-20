@@ -92,7 +92,7 @@ public class AsyncBatchLogger implements BatchLogger {
         
         ByteBuffer buff = getEOT();
         
-        channel.write(buff);
+        if (id == 0)channel.write(buff);
         return new byte[][] {transDigest.digest(), resultsDigest.digest()};
     }
     
@@ -102,7 +102,7 @@ public class AsyncBatchLogger implements BatchLogger {
         
         ByteBuffer buff = prepareHeader(number, lastCheckpoint, lastReconf, transHash, resultsHash, prevBlock);
                 
-        channel.write(buff);
+        if (id == 0)channel.write(buff);
         
         logger.debug("wrote header for block #{} to disk", number);
     }
@@ -113,7 +113,7 @@ public class AsyncBatchLogger implements BatchLogger {
         
         ByteBuffer buff = prepareCertificate(sigs);
         
-        channel.write(buff);
+        if (id == 0)channel.write(buff);
         
         logger.debug("wrote certificate to disk");
     }
@@ -151,7 +151,7 @@ public class AsyncBatchLogger implements BatchLogger {
 
         ByteBuffer buff = prepareTransactions(cid, transBytes);
         
-        channel.write(buff);
+        if (id == 0)channel.write(buff);
         
         logger.debug("wrote transactions to disk");
 
@@ -169,7 +169,7 @@ public class AsyncBatchLogger implements BatchLogger {
         
         ByteBuffer buff = prepareResults(results);
         
-        channel.write(buff);
+        if (id == 0)channel.write(buff);
         
         logger.debug("wrote results to disk");
 

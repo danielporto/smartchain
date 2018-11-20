@@ -351,7 +351,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         commitMsg.serializedMessage = data;
         commitMsg.serializedMessageSignature = TOMUtil.signMessage(controller.getStaticConf().getPrivateKey(), data);
         
-        commSystem.send(controller.getCurrentViewOtherAcceptors(),
+        commSystem.send(controller.getCurrentViewAcceptors(),
                     new ForwardedMessage(this.controller.getStaticConf().getProcessId(), commitMsg));
         
         requestID++;
