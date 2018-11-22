@@ -174,7 +174,7 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             
             boolean isCheckpoint = cid % config.getCheckpointPeriod() == 0;
             
-            if (isCheckpoint || (this.results.size() % config.getLogBatchLimit() == 0)) {
+            if (isCheckpoint || (cid % config.getLogBatchLimit() == 0)) {
                 
                 byte[] transHash = log.markEndTransactions()[0];
                 
