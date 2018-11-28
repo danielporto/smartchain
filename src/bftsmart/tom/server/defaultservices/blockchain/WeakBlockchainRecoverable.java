@@ -5,6 +5,7 @@
  */
 package bftsmart.tom.server.defaultservices.blockchain;
 
+import bftsmart.communication.ServerCommunicationSystem;
 import bftsmart.tom.server.defaultservices.blockchain.logger.ParallelBatchLogger;
 import bftsmart.tom.server.defaultservices.blockchain.logger.BufferBatchLogger;
 import bftsmart.consensus.messages.ConsensusMessage;
@@ -15,7 +16,9 @@ import bftsmart.statemanagement.StateManager;
 import bftsmart.statemanagement.standard.StandardStateManager;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
+import bftsmart.tom.core.messages.ForwardedMessage;
 import bftsmart.tom.core.messages.TOMMessage;
+import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.server.BatchExecutable;
 import bftsmart.tom.server.Recoverable;
 import bftsmart.tom.server.defaultservices.blockchain.logger.AsyncBatchLogger;
@@ -23,6 +26,7 @@ import bftsmart.tom.server.defaultservices.blockchain.logger.VoidBatchLogger;
 import bftsmart.tom.util.BatchBuilder;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
@@ -30,8 +34,15 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +59,11 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
     private TOMConfiguration config;
     private ServerViewController controller;
     private StateManager stateManager;
+    private ServerCommunicationSystem commSystem;
+    
+    private int session;
+    private int timeoutSeq;
+    private int requestID;
     
     private BatchLogger log;
     private LinkedList<TOMMessage> results;
@@ -56,6 +72,11 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
     private int lastCheckpoint;
     private int lastReconfig;
     private byte[] lastBlockHash;
+    
+    private Timer timer;
+    private Map<Integer, Set<Integer>> timeouts;
+    
+    private ReentrantLock timerLock = new ReentrantLock();
         
     public WeakBlockchainRecoverable() {
         
@@ -64,7 +85,9 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
         lastReconfig = -1;
         lastBlockHash = new byte[] {-1};
         
-        results = new LinkedList<>();        
+        results = new LinkedList<>();      
+        
+        timeouts =  new HashMap<>();
     }
     
     @Override
@@ -74,7 +97,14 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             
             config = replicaContext.getStaticConfiguration();
             controller = replicaContext.getSVController();
+            
+            commSystem = replicaContext.getServerCommunicationSystem();
         
+            Random rand = new Random(System.nanoTime());
+            session = rand.nextInt();
+            requestID = 0;
+            timeoutSeq = 0;
+            
             //batchDir = config.getConfigHome().concat(System.getProperty("file.separator")) +
             batchDir =    "files".concat(System.getProperty("file.separator"));
             
@@ -154,27 +184,100 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
         
         int cid = msgCtxs[0].getConsensusId();
         TOMMessage[] replies = new TOMMessage[0];
+        boolean timeout = false;
         
         try {
             
-            log.storeTransactions(cid, operations, msgCtxs);
-                        
-            if (!noop) {
+            LinkedList<byte[]> transList = new LinkedList<>();
+            LinkedList<MessageContext> ctxList = new LinkedList<>(); 
+            
+            for (int i = 0; i < operations.length ; i++) {
                 
-                byte[][] results = executeBatch(operations, msgCtxs);
+                if (controller.isCurrentViewMember(msgCtxs[i].getSender())) {
+                                        
+                    ByteBuffer buff = ByteBuffer.wrap(operations[i]);
+                    
+                    int l = buff.getInt();
+                    byte[] b = new byte[l];
+                    buff.get(b);
+                    
+                    if ((new String(b)).equals("TIMEOUT")) {
+                        
+                        int n = buff.getInt();
+                        
+                        if (n == nextNumber) {
+                            
+                            logger.info("Got timeout for current block from replica {}!", msgCtxs[i].getSender());
+                            
+                            Set<Integer> t = timeouts.get(nextNumber);
+                            if (t == null) {
+                                
+                                t = new HashSet<>();
+                                timeouts.put(nextNumber, t);
+                                
+                            }
+                            
+                            t.add(msgCtxs[i].getSender());
+                            
+                            if (t.size() >= (controller.getCurrentViewF() + 1)) {
+                                
+                                timeout = true;
+                            }
+                        }
+                    }
+                    
+                } else if (!noop) {
+                    
+                    transList.add(operations[i]);
+                    ctxList.add(msgCtxs[i]);
+                }
+                
+            }            
+                        
+            if (transList.size() > 0) {
+                
+                byte[][] transApp = new byte[transList.size()][];
+                MessageContext[] ctxApp = new MessageContext[ctxList.size()];
+                
+                transList.toArray(transApp);
+                ctxList.toArray(ctxApp);
+                
+                log.storeTransactions(cid, operations, msgCtxs);
+                
+                byte[][] resultsApp = executeBatch(transApp, ctxApp);
                 //replies = new TOMMessage[results.length];
                 
-                for (int i = 0; i < results.length; i++) {
+                for (int i = 0; i < resultsApp.length; i++) {
                     
-                    TOMMessage request = getTOMMessage(processID,viewID,operations[i], msgCtxs[i], results[i]);
+                    TOMMessage reply = getTOMMessage(processID,viewID,transApp[i], ctxApp[i], resultsApp[i]);
                     
-                    this.results.add(request);
+                    this.results.add(reply);
                 }
+                
+                if (timer != null) timer.cancel();
+                timer = new Timer();
+
+                timer.schedule(new TimerTask() {
+
+                    @Override
+                    public void run() {
+
+                        logger.info("Timeout for block {}, asking to close it", nextNumber);
+
+                        ByteBuffer buff = ByteBuffer.allocate("TIMEOUT".getBytes().length + (Integer.BYTES * 2));
+                        buff.putInt("TIMEOUT".getBytes().length);
+                        buff.put("TIMEOUT".getBytes());
+                        buff.putInt(nextNumber);
+
+                        sendTimeout(buff.array());
+                    }
+                    
+                }, config.getLogBatchTimeout());
             }
             
             boolean isCheckpoint = cid % config.getCheckpointPeriod() == 0;
             
-            if (isCheckpoint || (cid % config.getLogBatchLimit() == 0)) {
+            if (timeout | isCheckpoint || (cid % config.getLogBatchLimit() == 0)) {
                 
                 byte[] transHash = log.markEndTransactions()[0];
                 
@@ -194,6 +297,7 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                 
                 log.sync();
                 
+                timeouts.remove(nextNumber-1);
             }
             
             return replies;
@@ -202,6 +306,48 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             return new TOMMessage[0];
         } 
                 
+    }
+    
+    private void sendTimeout(byte[] payload) {
+        
+        try {
+            
+            timerLock.lock();
+                    
+            TOMMessage timeoutMsg = new TOMMessage(config.getProcessId(),
+                    session, timeoutSeq, requestID, payload, controller.getCurrentViewId(), TOMMessageType.ORDERED_REQUEST);
+            
+            byte[] data = serializeTOMMsg(timeoutMsg);
+            
+            timeoutMsg.serializedMessage = data;
+            timeoutMsg.serializedMessageSignature = TOMUtil.signMessage(controller.getStaticConf().getPrivateKey(), data);
+            timeoutMsg.signed = true;
+            
+            commSystem.send(controller.getCurrentViewAcceptors(),
+                    new ForwardedMessage(this.controller.getStaticConf().getProcessId(), timeoutMsg));
+            
+            requestID++;
+            timeoutSeq++;
+            
+        } catch (IOException ex) {
+            logger.error("Error while sending timeout message.", ex);
+        } finally {
+            
+            timerLock.unlock();
+        }
+        
+    }
+    
+    private byte[] serializeTOMMsg(TOMMessage msg) throws IOException {
+        
+        DataOutputStream dos = null;
+            byte[] data = null;
+            
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        dos = new DataOutputStream(baos);
+        msg.wExternal(dos);
+        dos.flush();
+        return baos.toByteArray();
     }
     
     private byte[] computeBlockHash(int number, int lastCheckpoint, int lastReconf,  byte[] transHash,  byte[] prevBlock) throws NoSuchAlgorithmException {

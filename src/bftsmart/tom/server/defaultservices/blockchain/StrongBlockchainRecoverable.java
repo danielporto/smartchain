@@ -14,7 +14,6 @@ import bftsmart.reconfiguration.util.TOMConfiguration;
 import bftsmart.statemanagement.ApplicationState;
 import bftsmart.statemanagement.StateManager;
 import bftsmart.statemanagement.standard.StandardStateManager;
-import bftsmart.tom.AsynchServiceProxy;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
 import bftsmart.tom.core.messages.ForwardedMessage;
@@ -40,6 +39,9 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -63,6 +65,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     private ServerCommunicationSystem commSystem;
     
     private int session;
+    private int commitSeq;
+    private int timeoutSeq;
     private int requestID;
     
     
@@ -75,10 +79,13 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     private byte[] lastBlockHash;
     
     //private AsynchServiceProxy proxy;
+    private Timer timer;
     
+    private ReentrantLock timerLock = new ReentrantLock();
     private ReentrantLock mapLock = new ReentrantLock();
     private Condition gotCertificate = mapLock.newCondition();
     private Map<Integer, Map<Integer,byte[]>> certificates;
+    private Map<Integer, Set<Integer>> timeouts;
     private int currentCommit;
     
     public StrongBlockchainRecoverable() {
@@ -92,6 +99,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         
         currentCommit = -1;
         certificates =  new HashMap<>();
+        timeouts =  new HashMap<>();
     }
     
     @Override
@@ -107,6 +115,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             Random rand = new Random(System.nanoTime());
             session = rand.nextInt();
             requestID = 0;
+            commitSeq = 0;
+            timeoutSeq = 0;
             
             
             //proxy = new AsynchServiceProxy(config.getProcessId());
@@ -233,29 +243,102 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         
         int cid = msgCtxs[0].getConsensusId();
         TOMMessage[] replies = new TOMMessage[0];
+        boolean timeout = false;
         
         try {
-            
-            log.storeTransactions(cid, operations, msgCtxs);
                         
-            if (!noop) {
+            LinkedList<byte[]> transList = new LinkedList<>();
+            LinkedList<MessageContext> ctxList = new LinkedList<>(); 
+            
+            for (int i = 0; i < operations.length ; i++) {
                 
-                byte[][] results = executeBatch(operations, msgCtxs);
+                if (controller.isCurrentViewMember(msgCtxs[i].getSender())) {
+                                        
+                    ByteBuffer buff = ByteBuffer.wrap(operations[i]);
+                    
+                    int l = buff.getInt();
+                    byte[] b = new byte[l];
+                    buff.get(b);
+                    
+                    if ((new String(b)).equals("TIMEOUT")) {
+                        
+                        int n = buff.getInt();
+                        
+                        if (n == nextNumber) {
+                            
+                            logger.info("Got timeout for current block from replica {}!", msgCtxs[i].getSender());
+                            
+                            Set<Integer> t = timeouts.get(nextNumber);
+                            if (t == null) {
+                                
+                                t = new HashSet<>();
+                                timeouts.put(nextNumber, t);
+                                
+                            }
+                            
+                            t.add(msgCtxs[i].getSender());
+                            
+                            if (t.size() >= (controller.getCurrentViewF() + 1)) {
+                                
+                                timeout = true;
+                            }
+                        }
+                    }
+                    
+                } else if (!noop) {
+                    
+                    transList.add(operations[i]);
+                    ctxList.add(msgCtxs[i]);
+                }
+                
+            }
+                        
+            if (transList.size() > 0) {
+                
+                byte[][] transApp = new byte[transList.size()][];
+                MessageContext[] ctxApp = new MessageContext[ctxList.size()];
+                
+                transList.toArray(transApp);
+                ctxList.toArray(ctxApp);
+                
+                log.storeTransactions(cid, transApp, ctxApp);
+
+                byte[][] resultsApp = executeBatch(transApp, ctxApp);
                 //replies = new TOMMessage[results.length];
                 
-                log.storeResults(results);
+                log.storeResults(resultsApp);
                 
-                for (int i = 0; i < results.length; i++) {
+                for (int i = 0; i < resultsApp.length; i++) {
                     
-                    TOMMessage request = getTOMMessage(processID,viewID,operations[i], msgCtxs[i], results[i]);
+                    TOMMessage reply = getTOMMessage(processID,viewID,transApp[i], ctxApp[i], resultsApp[i]);
                     
-                    this.results.add(request);
+                    this.results.add(reply);
                 }
+                
+                if (timer != null) timer.cancel();
+                timer = new Timer();
+
+                timer.schedule(new TimerTask() {
+
+                    @Override
+                    public void run() {
+
+                        logger.info("Timeout for block {}, asking to close it", nextNumber);
+
+                        ByteBuffer buff = ByteBuffer.allocate("TIMEOUT".getBytes().length + (Integer.BYTES * 2));
+                        buff.putInt("TIMEOUT".getBytes().length);
+                        buff.put("TIMEOUT".getBytes());
+                        buff.putInt(nextNumber);
+
+                        sendTimeout(buff.array());
+                    }
+                    
+                }, config.getLogBatchTimeout());
             }
             
             boolean isCheckpoint = cid % config.getCheckpointPeriod() == 0;
             
-            if (isCheckpoint || (cid % config.getLogBatchLimit() == 0)) {
+            if (timeout || isCheckpoint || (cid % config.getLogBatchLimit() == 0)) {
                 
                 byte[][] hashes = log.markEndTransactions();
                 
@@ -324,7 +407,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                 
                 log.sync();
                 
-                
+                timeouts.remove(nextNumber-1);
             }
             
             return replies;
@@ -338,27 +421,71 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     
     private void sendCommit(byte[] payload) throws IOException {
         
+        try {
         
-        TOMMessage commitMsg = new TOMMessage(config.getProcessId(),
-                session, requestID, requestID, payload, controller.getCurrentViewId(), TOMMessageType.UNORDERED_REQUEST);
+            timerLock.lock();
+                    
+            TOMMessage commitMsg = new TOMMessage(config.getProcessId(),
+                    session, commitSeq, requestID, payload, controller.getCurrentViewId(), TOMMessageType.UNORDERED_REQUEST);
+
+            byte[] data = serializeTOMMsg(commitMsg);
+
+            commitMsg.serializedMessage = data;
+            commitMsg.serializedMessageSignature = TOMUtil.signMessage(controller.getStaticConf().getPrivateKey(), data);
+            commitMsg.signed = true;
+
+            commSystem.send(controller.getCurrentViewAcceptors(),
+                        new ForwardedMessage(this.controller.getStaticConf().getProcessId(), commitMsg));
+
+            requestID++;
+            commitSeq++;
+        
+        } finally {
+            
+            timerLock.unlock();
+        }
+    }
+    
+    private void sendTimeout(byte[] payload) {
+        
+        try {
+            
+            timerLock.lock();
+            
+            TOMMessage timeoutMsg = new TOMMessage(config.getProcessId(),
+                    session, timeoutSeq, requestID, payload, controller.getCurrentViewId(), TOMMessageType.ORDERED_REQUEST);
+            
+            byte[] data = serializeTOMMsg(timeoutMsg);
+            
+            timeoutMsg.serializedMessage = data;
+            timeoutMsg.serializedMessageSignature = TOMUtil.signMessage(controller.getStaticConf().getPrivateKey(), data);
+            timeoutMsg.signed = true;
+            
+            commSystem.send(controller.getCurrentViewAcceptors(),
+                    new ForwardedMessage(this.controller.getStaticConf().getProcessId(), timeoutMsg));
+            
+            requestID++;
+            timeoutSeq++;
+            
+        } catch (IOException ex) {
+            logger.error("Error while sending timeout message.", ex);
+        } finally {
+            
+            timerLock.unlock();
+        }
+        
+    }
+    
+    private byte[] serializeTOMMsg(TOMMessage msg) throws IOException {
         
         DataOutputStream dos = null;
-        byte[] data = null;
-                
+            byte[] data = null;
+            
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         dos = new DataOutputStream(baos);
-        commitMsg.wExternal(dos);
+        msg.wExternal(dos);
         dos.flush();
-        data = baos.toByteArray();
-        
-        commitMsg.serializedMessage = data;
-        commitMsg.serializedMessageSignature = TOMUtil.signMessage(controller.getStaticConf().getPrivateKey(), data);
-        
-        commSystem.send(controller.getCurrentViewAcceptors(),
-                    new ForwardedMessage(this.controller.getStaticConf().getProcessId(), commitMsg));
-        
-        requestID++;
-
+        return baos.toByteArray();
     }
     
     private byte[] computeBlockHash(int number, int lastCheckpoint, int lastReconf,  byte[] transHash, byte[] resultsHash, byte[] prevBlock) throws NoSuchAlgorithmException {
