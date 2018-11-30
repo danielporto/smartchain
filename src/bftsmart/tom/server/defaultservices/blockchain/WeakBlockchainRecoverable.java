@@ -320,8 +320,13 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             byte[] data = serializeTOMMsg(timeoutMsg);
             
             timeoutMsg.serializedMessage = data;
-            timeoutMsg.serializedMessageSignature = TOMUtil.signMessage(controller.getStaticConf().getPrivateKey(), data);
-            timeoutMsg.signed = true;
+            
+            if (config.getUseSignatures() == 1) {
+                
+                timeoutMsg.serializedMessageSignature = TOMUtil.signMessage(controller.getStaticConf().getPrivateKey(), data);
+                timeoutMsg.signed = true;
+                
+            }
             
             commSystem.send(controller.getCurrentViewAcceptors(),
                     new ForwardedMessage(this.controller.getStaticConf().getProcessId(), timeoutMsg));
