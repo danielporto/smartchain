@@ -341,7 +341,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             
             boolean isCheckpoint = cid % config.getCheckpointPeriod() == 0;
             
-            if (timeout || isCheckpoint || (cid % config.getLogBatchLimit() == 0)) {
+            if (timeout || isCheckpoint || /*(cid % config.getLogBatchLimit() == 0)*/ 
+                    (this.results.size() > config.getMaxBatchSize() * config.getLogBatchLimit())) {
                 
                 byte[][] hashes = log.markEndTransactions();
                 
