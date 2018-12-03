@@ -306,6 +306,9 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                 byte[][] resultsApp = executeBatch(transApp, ctxApp);
                 //replies = new TOMMessage[results.length];
                 
+                //TODO: this should be logged in another way, because the number transactions logged may not match the
+                // number of results, because of the timeouts (that still need to be added to the block). This can render
+                //audition impossible. Must implemented a way to match the results to their respective transactions.
                 log.storeResults(resultsApp);
                 
                 for (int i = 0; i < resultsApp.length; i++) {
