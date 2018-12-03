@@ -33,7 +33,9 @@ import java.io.DataOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
@@ -463,6 +465,10 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                     
                     appState = getSnapshot();
                     appStateHash = TOMUtil.computeHash(appState);
+                    
+                    logger.info("Storing checkpoint at CID {}", cid);
+                    
+                    writeCheckpointToDisk(cid, appState);
                 }
                 
                 log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
@@ -720,6 +726,17 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         logger.info("Proof for CID {} is {} ({} valid messages, needed {})",
                 msgCtxs[0].getConsensusId(), (ret ? "valid" : "invalid"), countValid, certificate);
         return ret;
+    }
+    
+    private void writeCheckpointToDisk(int cid, byte[] checkpoint) throws IOException {
+        
+        String checkpointPath = batchDir + "checkpoint." + config.getProcessId() + "." + String.valueOf(cid) + ".log";
+        
+        RandomAccessFile log = new RandomAccessFile(checkpointPath, "rwd");
+        
+        log.write(checkpoint);
+        
+        log.close();
     }
  
     @Override
