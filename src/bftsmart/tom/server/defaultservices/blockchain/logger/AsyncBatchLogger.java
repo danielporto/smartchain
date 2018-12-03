@@ -33,10 +33,12 @@ public class AsyncBatchLogger implements BatchLogger {
     private int id;
     private int lastCachedCID = -1;
     private int firstCachedCID = -1;
+    private int lastStoredCID = -1;
     private LinkedList<CommandsInfo> cachedBatches;
     private LinkedList<byte[][]> cachedResults;
     private RandomAccessFile log;
     private FileChannel channel;
+    private String logDir;
     private String logPath;
     private MessageDigest transDigest;
     private MessageDigest resultsDigest;
@@ -46,25 +48,35 @@ public class AsyncBatchLogger implements BatchLogger {
         
     }
     
-    private AsyncBatchLogger(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
+    private AsyncBatchLogger(int id, String logDir) throws NoSuchAlgorithmException {
         this.id = id;
         cachedBatches = new LinkedList<>();
         cachedResults = new LinkedList<>();
-        
-        File directory = new File(logDir);
-        if (!directory.exists()) directory.mkdir();
-        
-        logPath = logDir + String.valueOf(this.id) + "." + System.currentTimeMillis() + ".log";
-        
-        logger.debug("Logging to file " + logPath);
-        log = new RandomAccessFile(logPath, "rw");
-        channel = log.getChannel();
          
         transDigest = TOMUtil.getHashEngine();
         resultsDigest = TOMUtil.getHashEngine();
                 
+        File directory = new File(logDir);
+        if (!directory.exists()) directory.mkdir();
+        
+        this.logDir = logDir;
+        
         logger.info("Asynchronous batch logger instantiated");
 
+        
+    }
+    
+    public void startNewFile(int blockNumber) throws IOException {
+        
+        if (log != null) log.close();
+        if (channel != null) channel.close();
+        
+        logPath = logDir + String.valueOf(this.id) + "." + blockNumber + ".log";
+        
+        logger.debug("Logging to file " + logPath);
+        log = new RandomAccessFile(logPath, "rw");
+        channel = log.getChannel();
+        
     }
     
     public static BatchLogger getInstance(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
@@ -76,6 +88,7 @@ public class AsyncBatchLogger implements BatchLogger {
         
         if (firstCachedCID == -1) firstCachedCID = cid;
         lastCachedCID = cid;
+        lastStoredCID = cid;
         CommandsInfo cmds = new CommandsInfo(requests, contexts);
         cachedBatches.add(cmds);
         writeTransactionsToDisk(cid, cmds);
@@ -126,6 +139,10 @@ public class AsyncBatchLogger implements BatchLogger {
         return firstCachedCID;
     }
     
+    public int getLastStoredCID() {
+        return lastStoredCID;
+    }
+    
     public CommandsInfo[] getCached() {
         
         CommandsInfo[] cmds = new CommandsInfo[cachedBatches.size()];
@@ -138,6 +155,17 @@ public class AsyncBatchLogger implements BatchLogger {
         cachedBatches.clear();
         firstCachedCID = -1;
         lastCachedCID = -1;
+    }
+    
+    public void setCached(CommandsInfo[] cmds, int firstCID, int lastCID) {
+        
+        cachedBatches.clear();
+        
+        for (CommandsInfo  cmd : cmds) cachedBatches.add(cmd);
+        
+        lastStoredCID = firstCID;
+        firstCachedCID = firstCID;
+        lastCachedCID = lastCID;
     }
     
     private void writeTransactionsToDisk(int cid, CommandsInfo commandsInfo) throws IOException {

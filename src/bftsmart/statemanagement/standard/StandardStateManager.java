@@ -48,13 +48,13 @@ import org.slf4j.LoggerFactory;
  */
 public class StandardStateManager extends StateManager {
 
-    private Logger logger = LoggerFactory.getLogger(this.getClass());
+    protected Logger logger = LoggerFactory.getLogger(this.getClass());
 
-    private int replica;
-    private ReentrantLock lockTimer = new ReentrantLock();
-    private Timer stateTimer = null;
-    private final static long INIT_TIMEOUT = 40000;
-    private long timeout = INIT_TIMEOUT;
+    protected int replica;
+    protected ReentrantLock lockTimer = new ReentrantLock();
+    protected Timer stateTimer = null;
+    protected final static long INIT_TIMEOUT = 40000;
+    protected long timeout = INIT_TIMEOUT;
 
     @Override
     public void init(TOMLayer tomLayer, DeliveryThread dt) {

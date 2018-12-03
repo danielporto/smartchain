@@ -8,6 +8,7 @@ package bftsmart.tom.server.defaultservices.blockchain;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.server.defaultservices.CommandsInfo;
 import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
@@ -180,8 +181,13 @@ public interface BatchLogger {
     
     public int getFirstCachedCID();
     
+    public int getLastStoredCID();
+    
     public CommandsInfo[] getCached();
     
     public void clearCached();
     
+    public void setCached(CommandsInfo[] cmds, int firstCID, int lastCID);
+    
+    public void startNewFile(int blockNumber) throws IOException;
 }

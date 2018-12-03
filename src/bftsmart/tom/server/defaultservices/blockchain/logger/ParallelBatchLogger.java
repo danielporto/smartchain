@@ -38,11 +38,13 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
     private int id;
     private int lastCachedCID = -1;
     private int firstCachedCID = -1;
+    private int lastStoredCID = -1;
     private LinkedList<CommandsInfo> cachedBatches;
     private LinkedList<byte[][]> cachedResults;
     private RandomAccessFile log;
     private FileChannel channel;
     private String logPath;
+    private String logDir;
     private MessageDigest transDigest;
     private MessageDigest resultsDigest;
     
@@ -83,6 +85,19 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
 
     }
     
+    public void startNewFile(int blockNumber) throws IOException {
+        
+        if (log != null) log.close();
+        if (channel != null) channel.close();
+        
+        logPath = logDir + String.valueOf(this.id) + "." + blockNumber + ".log";
+        
+        logger.debug("Logging to file " + logPath);
+        log = new RandomAccessFile(logPath, "rwd");
+        channel = log.getChannel();
+        
+    }
+    
     public static BatchLogger getInstance(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
         ParallelBatchLogger ret = new ParallelBatchLogger(id, logDir);
         ret.start();        
@@ -93,6 +108,7 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
         
         if (firstCachedCID == -1) firstCachedCID = cid;
         lastCachedCID = cid;
+        lastStoredCID = cid;
         CommandsInfo cmds = new CommandsInfo(requests, contexts);
         cachedBatches.add(cmds);
         writeTransactionsToDisk(cid, cmds);
@@ -147,6 +163,10 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
         return firstCachedCID;
     }
     
+    public int getLastStoredCID() {
+        return lastStoredCID;
+    }
+    
     public CommandsInfo[] getCached() {
         
         CommandsInfo[] cmds = new CommandsInfo[cachedBatches.size()];
@@ -159,6 +179,17 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
         cachedBatches.clear();
         firstCachedCID = -1;
         lastCachedCID = -1;
+    }
+    
+    public void setCached(CommandsInfo[] cmds, int firstCID, int lastCID) {
+        
+        cachedBatches.clear();
+        
+        for (CommandsInfo  cmd : cmds) cachedBatches.add(cmd);
+        
+        lastStoredCID = firstCID;
+        firstCachedCID = firstCID;
+        lastCachedCID = lastCID;
     }
     
     private void writeTransactionsToDisk(int cid, CommandsInfo commandsInfo) throws IOException, InterruptedException {

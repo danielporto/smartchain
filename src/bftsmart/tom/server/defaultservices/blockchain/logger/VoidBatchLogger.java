@@ -30,9 +30,9 @@ public class VoidBatchLogger implements BatchLogger {
     private int id;
     private int lastCachedCID = -1;
     private int firstCachedCID = -1;
+    private int lastStoredCID = -1;
     private LinkedList<CommandsInfo> cachedBatches;
     private LinkedList<byte[][]> cachedResults;
-    private String logPath;
     private MessageDigest transDigest;
     private MessageDigest resultsDigest;
     
@@ -48,16 +48,18 @@ public class VoidBatchLogger implements BatchLogger {
         
         File directory = new File(logDir);
         if (!directory.exists()) directory.mkdir();
-        
-        logPath = logDir + String.valueOf(this.id) + "." + System.currentTimeMillis() + ".log";
-        
-        logger.debug("Logging to file " + logPath);
          
         transDigest = TOMUtil.getHashEngine();
         resultsDigest = TOMUtil.getHashEngine();
         
         logger.info("Void batch logger instantiated");
 
+    }
+    
+    public void startNewFile(int blockNumber) throws IOException {
+        
+        //nothing to do
+        
     }
     
     public static BatchLogger getInstance(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
@@ -69,6 +71,7 @@ public class VoidBatchLogger implements BatchLogger {
         
         if (firstCachedCID == -1) firstCachedCID = cid;
         lastCachedCID = cid;
+        lastStoredCID = cid;
         CommandsInfo cmds = new CommandsInfo(requests, contexts);
         cachedBatches.add(cmds);
         writeTransactionsToDisk(cid, cmds);
@@ -112,6 +115,10 @@ public class VoidBatchLogger implements BatchLogger {
         return firstCachedCID;
     }
     
+    public int getLastStoredCID() {
+        return lastStoredCID;
+    }
+    
     public CommandsInfo[] getCached() {
         
         CommandsInfo[] cmds = new CommandsInfo[cachedBatches.size()];
@@ -124,6 +131,17 @@ public class VoidBatchLogger implements BatchLogger {
         cachedBatches.clear();
         firstCachedCID = -1;
         lastCachedCID = -1;
+    }
+    
+    public void setCached(CommandsInfo[] cmds, int firstCID, int lastCID) {
+        
+        cachedBatches.clear();
+        
+        for (CommandsInfo  cmd : cmds) cachedBatches.add(cmd);
+        
+        lastStoredCID = firstCID;
+        firstCachedCID = firstCID;
+        lastCachedCID = lastCID;
     }
     
     private void writeTransactionsToDisk(int cid, CommandsInfo commandsInfo) throws IOException, InterruptedException {

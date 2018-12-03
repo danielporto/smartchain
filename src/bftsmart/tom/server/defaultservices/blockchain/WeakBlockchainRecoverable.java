@@ -21,12 +21,16 @@ import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.server.BatchExecutable;
 import bftsmart.tom.server.Recoverable;
+import bftsmart.tom.server.defaultservices.CommandsInfo;
 import bftsmart.tom.server.defaultservices.blockchain.logger.AsyncBatchLogger;
 import bftsmart.tom.server.defaultservices.blockchain.logger.VoidBatchLogger;
+import bftsmart.tom.server.defaultservices.blockchain.strategy.BlockchainState;
+import bftsmart.tom.server.defaultservices.blockchain.strategy.BlockchainStateManager;
 import bftsmart.tom.util.BatchBuilder;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
@@ -58,7 +62,7 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
     
     private TOMConfiguration config;
     private ServerViewController controller;
-    private StateManager stateManager;
+    private BlockchainStateManager stateManager;
     private ServerCommunicationSystem commSystem;
     
     private int session;
@@ -72,6 +76,9 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
     private int lastCheckpoint;
     private int lastReconfig;
     private byte[] lastBlockHash;
+    
+    private byte[] appState;
+    private byte[] appStateHash;
     
     private Timer timer;
     private Map<Integer, Set<Integer>> timeouts;
@@ -99,6 +106,9 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             controller = replicaContext.getSVController();
             
             commSystem = replicaContext.getServerCommunicationSystem();
+            
+            appState = getSnapshot();
+            appStateHash = TOMUtil.computeHash(appState);
         
             Random rand = new Random(System.nanoTime());
             session = rand.nextInt();
@@ -108,15 +118,9 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             //batchDir = config.getConfigHome().concat(System.getProperty("file.separator")) +
             batchDir =    "files".concat(System.getProperty("file.separator"));
             
-            if (config.getLogBatchType().equalsIgnoreCase("buffer")) {
-                log = BufferBatchLogger.getInstance(config.getProcessId(), batchDir);
-            } else if(config.getLogBatchType().equalsIgnoreCase("parallel")) {
-                log = ParallelBatchLogger.getInstance(config.getProcessId(), batchDir);
-            } else if(config.getLogBatchType().equalsIgnoreCase("async")) {
-                log = AsyncBatchLogger.getInstance(config.getProcessId(), batchDir);
-            } else {
-                log = VoidBatchLogger.getInstance(config.getProcessId(), batchDir);
-            }
+            initLog();
+            
+            log.startNewFile(nextNumber);
             
             //write genesis block
             byte[] transHash = log.markEndTransactions()[0];
@@ -125,6 +129,8 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, transHash, lastBlockHash);
                         
             nextNumber++;
+            
+            log.startNewFile(nextNumber);
             
         } catch (Exception ex) {
             
@@ -135,18 +141,116 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
 
     @Override
     public ApplicationState getState(int cid, boolean sendState) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+                
+        logger.info("CID requested: " + cid + ". Last checkpoint: " + lastCheckpoint + ". Last CID: " + log.getLastStoredCID());
+        
+        //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        boolean hasCached = log.getFirstCachedCID() != -1 && log.getLastCachedCID() != -1;
+        boolean hasState = cid >= lastCheckpoint && cid <= log.getLastStoredCID();
+        
+        CommandsInfo[] batches = null;
+
+        int lastCID = -1;
+        
+        BlockchainState ret = new BlockchainState();
+        
+        if (hasState) {
+                        
+            logger.info("Constructing ApplicationState up until CID " + cid);
+            
+            int size = cid - lastCheckpoint;
+            
+            if (size > 0 && hasCached) {
+                
+                CommandsInfo[] cached = log.getCached();
+                batches = new CommandsInfo[size];
+
+                for (int i = 0; i < size; i++)
+                    batches[i] = cached[i];
+            }
+            lastCID = cid;
+            
+            ret = new BlockchainState(batches, lastCheckpoint, lastCID, (sendState ? appState : null), 
+                    appStateHash, config.getProcessId(), nextNumber, lastReconfig, lastBlockHash);
+        } 
+        
+        return ret;
     }
 
     @Override
-    public int setState(ApplicationState state) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public int setState(ApplicationState recvState) {
+        //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        
+        int lastCID = -1;
+        if (recvState instanceof BlockchainState) {
+
+            BlockchainState state = (BlockchainState) recvState;
+
+            int lastCheckpointCID = state.getLastCheckpointCID();
+            lastCID = state.getLastCID();
+
+            logger.info("I'm going to update myself from CID "
+                    + lastCheckpointCID + " to CID " + lastCID);                
+            try {
+
+                if (state.getSerializedState() != null) {
+                    logger.info("The state is not null. Will install it");
+                    
+                    nextNumber = state.getNextNumber();
+                    lastCheckpoint = state.getLastCheckpointCID();
+                    lastReconfig = state.getLastReconfig();
+                    lastBlockHash = state.getLastBlockHash();
+                    appState = state.getState();
+                    appStateHash = state.getStateHash();
+        
+                    initLog();
+                    log.setCached(state.getMessageBatches(), state.getLastCheckpointCID(), state.getLastCID());
+                    installSnapshot(state.getSerializedState());
+                    
+                    
+                }
+                
+                stateManager.fetchBlocks(nextNumber-1);
+                
+                log.startNewFile(nextNumber);
+                
+                for (int cid = lastCheckpointCID + 1; cid <= lastCID; cid++) {
+
+                    logger.debug("Processing and verifying batched requests for cid " + cid);
+                    if (state.getMessageBatch(cid) == null) {
+                        logger.warn("Consensus " + cid + " is null!");
+                    }
+
+                    CommandsInfo cmdInfo = state.getMessageBatch(cid); 
+                    byte[][] commands = cmdInfo.commands; // take a batch
+                    MessageContext[] msgCtxs = cmdInfo.msgCtx;
+                    
+                    executeBatch(config.getProcessId(), controller.getCurrentViewId(), commands, msgCtxs, msgCtxs[0].isNoOp(),false);
+                    
+                    /*if (commands == null || msgCtxs == null || msgCtxs[0].isNoOp()) {
+                        continue;
+                    }*/
+                }
+
+            } catch (Exception e) {
+                logger.error("Failed to process and verify batched requests",e);
+                if (e instanceof ArrayIndexOutOfBoundsException) {
+                    logger.info("Last checkpoint, last consensus ID (CID): " + state.getLastCheckpointCID());
+                    logger.info("Last CID: " + state.getLastCID());
+                    logger.info("number of messages expected to be in the batch: " + (state.getLastCID() - state.getLastCheckpointCID() + 1));
+                    logger.info("number of messages in the batch: " + state.getMessageBatches().length);
+                 }
+            }
+
+        }
+        
+        return lastCID;
     }
 
     @Override
     public StateManager getStateManager() {
         if (stateManager == null) {
-            stateManager = new StandardStateManager(); // might need to be other implementation
+            stateManager = new BlockchainStateManager(false, false); // might need to be other implementation
         }
         return stateManager;
     }
@@ -160,13 +264,13 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
     @Override
     public void noOp(int CID, byte[][] operations, MessageContext[] msgCtxs) {
         
-        executeBatch(-1, -1, operations, msgCtxs, true);
+        executeBatch(-1, -1, operations, msgCtxs, true,true);
     }
 
     @Override
     public TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs) {
         
-        return executeBatch(processID, viewID, operations, msgCtxs, false);
+        return executeBatch(processID, viewID, operations, msgCtxs, false, true);
     }
 
     @Override
@@ -180,7 +284,7 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
         return TOMUtil.computeHash(getSnapshot());
     }
     
-    private TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs, boolean noop) {
+    private TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs, boolean noop, boolean fromConsensus) {
         
         int cid = msgCtxs[0].getConsensusId();
         TOMMessage[] replies = new TOMMessage[0];
@@ -234,18 +338,18 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                 
             }            
                         
+            log.storeTransactions(cid, operations, msgCtxs);
+            
             if (transList.size() > 0) {
                 
                 byte[][] transApp = new byte[transList.size()][];
                 MessageContext[] ctxApp = new MessageContext[ctxList.size()];
-                
+            
                 transList.toArray(transApp);
                 ctxList.toArray(ctxApp);
-                
-                log.storeTransactions(cid, operations, msgCtxs);
-                
-                byte[][] resultsApp = executeBatch(transApp, ctxApp);
-                //replies = new TOMMessage[results.length];
+                       
+                //byte[][] resultsApp = executeBatch(transApp, ctxApp);
+                byte[][] resultsApp = appExecuteBatch(transApp, ctxApp, fromConsensus);
                 
                 for (int i = 0; i < resultsApp.length; i++) {
                     
@@ -281,6 +385,17 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                 
                 byte[] transHash = log.markEndTransactions()[0];
                 
+                if (isCheckpoint) {
+                    
+                    logger.info("Performing checkpoint at CID {}", cid);
+                    
+                    log.clearCached();
+                    lastCheckpoint = cid;
+                    
+                    appState = getSnapshot();
+                    appStateHash = TOMUtil.computeHash(appState);
+                }
+                
                 log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, transHash, new byte[0], lastBlockHash);
                 
                 lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, transHash, lastBlockHash);
@@ -291,11 +406,11 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                 this.results.toArray(replies);
                 this.results.clear();
                 
-                if (isCheckpoint) log.clearCached();
-                
                 logger.info("Synching log at CID " + cid);
                 
                 log.sync();
+                
+                log.startNewFile(nextNumber);
                 
                 timeouts.remove(nextNumber-1);
             }
@@ -374,7 +489,19 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
         return md.digest(buff.array());
     }
     
-    
+    private void initLog() throws FileNotFoundException, NoSuchAlgorithmException {
+        
+        if (config.getLogBatchType().equalsIgnoreCase("buffer")) {
+            log = BufferBatchLogger.getInstance(config.getProcessId(), batchDir);
+        } else if(config.getLogBatchType().equalsIgnoreCase("parallel")) {
+            log = ParallelBatchLogger.getInstance(config.getProcessId(), batchDir);
+        } else if(config.getLogBatchType().equalsIgnoreCase("async")) {
+            log = AsyncBatchLogger.getInstance(config.getProcessId(), batchDir);
+        } else {
+            log = VoidBatchLogger.getInstance(config.getProcessId(), batchDir);
+        }
+        
+    }
     public boolean verifyBatch(byte[][] commands, MessageContext[] msgCtxs){
         
         //first off, re-create the batch received in the PROPOSE message of the consensus instance
@@ -442,7 +569,8 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
     @Override
     public byte[][] executeBatch(byte[][] operations, MessageContext[] msgCtxs) {
 
-        return appExecuteBatch(operations, msgCtxs, true);
+        //not used
+        return null;
     }
  
     /**
