@@ -143,6 +143,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             //write genesis block
             byte[][] hashes = log.markEndTransactions();
             log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
+            
+            log.sync();
                         
             lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
                         
@@ -417,6 +419,9 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                 //byte[][] resultsApp = executeBatch(transApp, ctxApp);
                 byte[][] resultsApp = appExecuteBatch(transApp, ctxApp, fromConsensus);
                 
+                //TODO: this should be logged in another way, because the number transactions logged may not match the
+                // number of results, because of the timeouts (that still need to be added to the block). This can render
+                //audition impossible. Must implemented a way to match the results to their respective transactions.
                 log.storeResults(resultsApp);
                 
                 for (int i = 0; i < resultsApp.length; i++) {
@@ -452,7 +457,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             
             boolean isCheckpoint = cid % config.getCheckpointPeriod() == 0;
             
-            if (timeout || isCheckpoint || (cid % config.getLogBatchLimit() == 0)) {
+            if (timeout || isCheckpoint || /*(cid % config.getLogBatchLimit() == 0)*/ 
+                    (this.results.size() > config.getMaxBatchSize() * config.getLogBatchLimit())) {
                 
                 byte[][] hashes = log.markEndTransactions();
                 

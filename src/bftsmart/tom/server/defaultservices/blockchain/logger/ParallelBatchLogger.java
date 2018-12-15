@@ -67,18 +67,14 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
         cachedBatches = new LinkedList<>();
         cachedResults = new LinkedList<>();
         
+        transDigest = TOMUtil.getHashEngine();
+        resultsDigest = TOMUtil.getHashEngine();
+                
         File directory = new File(logDir);
         if (!directory.exists()) directory.mkdir();
         
-        logPath = logDir + String.valueOf(this.id) + "." + System.currentTimeMillis() + ".log";
-        
-        logger.debug("Logging to file " + logPath);
-        log = new RandomAccessFile(logPath, "rwd");
-        channel = log.getChannel();
-         
-        transDigest = TOMUtil.getHashEngine();
-        resultsDigest = TOMUtil.getHashEngine();
-        
+        this.logDir = logDir;
+                
         buffers = new LinkedBlockingQueue<>();
 
         logger.info("Parallel batch logger instantiated");
@@ -249,7 +245,7 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
             isSynched.await(10, TimeUnit.MILLISECONDS);
         }
         synched = false;
-        syncLock.lock();
+        syncLock.unlock();
         
         logger.debug("synced log to disk");
     }
