@@ -137,6 +137,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             //write genesis block
             byte[][] hashes = log.markEndTransactions();
             log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
+            
+            log.sync();
                         
             lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
                         

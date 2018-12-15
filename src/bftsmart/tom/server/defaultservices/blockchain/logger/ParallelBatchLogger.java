@@ -218,7 +218,7 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
             isSynched.await(10, TimeUnit.MILLISECONDS);
         }
         synched = false;
-        syncLock.lock();
+        syncLock.unlock();
         
         logger.debug("synced log to disk");
     }
