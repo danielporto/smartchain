@@ -37,6 +37,7 @@ import bftsmart.tom.util.TOMUtil;
 import bftsmart.consensus.Consensus;
 import bftsmart.consensus.Epoch;
 import bftsmart.tom.leaderchange.CertifiedDecision;
+import java.util.logging.Level;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +56,8 @@ public class StandardStateManager extends StateManager {
     protected Timer stateTimer = null;
     protected final static long INIT_TIMEOUT = 40000;
     protected long timeout = INIT_TIMEOUT;
+    
+    protected boolean ordered = false;
 
     @Override
     public void init(TOMLayer tomLayer, DeliveryThread dt) {
@@ -65,7 +68,7 @@ public class StandardStateManager extends StateManager {
 
     }
 
-    private void changeReplica() {
+    protected void changeReplica() {
 
         int[] processes = this.SVController.getCurrentViewOtherAcceptors();
         Random r = new Random();
@@ -150,10 +153,22 @@ public class StandardStateManager extends StateManager {
     }
 
     @Override
-    public void SMReplyDeliver(SMMessage msg, boolean isBFT) {
+    public void SMReplyDeliver(SMMessage msg, boolean isBFT) {        
+        
+        logger.debug("Received state reply from " + msg.getSender());
+        
         lockTimer.lock();
         if (SVController.getStaticConf().isStateTransferEnabled()) {
+            
+            logger.debug("State transfer is enabled");
+            
+            if (ordered) waitingCID = msg.getCID(); // experimental usage of ordered state requests. This approach does not explicitly
+                                                    // asks for a state up to a consensus ID. 
+            
             if (waitingCID != -1 && msg.getCID() == waitingCID) {
+                
+                logger.debug("Received reply for requested state with CID " + waitingCID);
+                
                 int currentRegency = -1;
                 int currentLeader = -1;
                 View currentView = null;
@@ -173,7 +188,7 @@ public class StandardStateManager extends StateManager {
                     if (enoughViews(msg.getView())) {
                         currentView = msg.getView();
                     }
-                    if (enoughProofs(waitingCID, this.tomLayer.getSynchronizer().getLCManager())) {
+                    if (enoughProofs(waitingCID, this.tomLayer.getSynchronizer().getLCManager())) {                        
                         currentProof = msg.getState().getCertifiedDecision(SVController);
                     }
 
@@ -209,7 +224,7 @@ public class StandardStateManager extends StateManager {
                             }
                         }
                     }
-
+                    
                     if (otherReplicaState != null && haveState == 1 && currentRegency > -1
                             && currentLeader > -1 && currentView != null && (!isBFT || currentProof != null || appStateOnly)) {
 

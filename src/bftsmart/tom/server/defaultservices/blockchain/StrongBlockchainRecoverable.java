@@ -12,30 +12,28 @@ import bftsmart.consensus.messages.ConsensusMessage;
 import bftsmart.reconfiguration.ServerViewController;
 import bftsmart.reconfiguration.util.TOMConfiguration;
 import bftsmart.statemanagement.ApplicationState;
+import bftsmart.statemanagement.SMMessage;
 import bftsmart.statemanagement.StateManager;
-import bftsmart.statemanagement.standard.StandardStateManager;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
 import bftsmart.tom.core.messages.ForwardedMessage;
 import bftsmart.tom.core.messages.TOMMessage;
-import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.server.BatchExecutable;
 import bftsmart.tom.server.Recoverable;
 import bftsmart.tom.server.defaultservices.CommandsInfo;
 import bftsmart.tom.server.defaultservices.blockchain.logger.AsyncBatchLogger;
 import bftsmart.tom.server.defaultservices.blockchain.logger.VoidBatchLogger;
+import bftsmart.tom.server.defaultservices.blockchain.strategy.BlockchainSMMessage;
 import bftsmart.tom.server.defaultservices.blockchain.strategy.BlockchainState;
 import bftsmart.tom.server.defaultservices.blockchain.strategy.BlockchainStateManager;
 import bftsmart.tom.util.BatchBuilder;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
@@ -44,10 +42,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -70,11 +65,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     private BlockchainStateManager stateManager;
     private ServerCommunicationSystem commSystem;
     
-    private int session;
-    private int commitSeq;
-    private int timeoutSeq;
-    private int requestID;
-    
+    private TOMMessageGenerator TOMgen;
     
     private BatchLogger log;
     private LinkedList<TOMMessage> results;
@@ -88,13 +79,14 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     private byte[] appStateHash;
     
     //private AsynchServiceProxy proxy;
-    private Timer timer;
+    //private Timer timer;
     
     private ReentrantLock timerLock = new ReentrantLock();
     private ReentrantLock mapLock = new ReentrantLock();
     private Condition gotCertificate = mapLock.newCondition();
     private Map<Integer, Map<Integer,byte[]>> certificates;
     private Map<Integer, Set<Integer>> timeouts;
+    private Set<SMMessage> stateMsgs;
     private int currentCommit;
     
     public StrongBlockchainRecoverable() {
@@ -109,6 +101,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         currentCommit = -1;
         certificates =  new HashMap<>();
         timeouts =  new HashMap<>();
+        stateMsgs = new HashSet<>();
     }
     
     @Override
@@ -123,13 +116,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             
             appState = getSnapshot();
             appStateHash = TOMUtil.computeHash(appState);
-            
-            Random rand = new Random(System.nanoTime());
-            session = rand.nextInt();
-            requestID = 0;
-            commitSeq = 0;
-            timeoutSeq = 0;
-            
+
+            TOMgen = new TOMMessageGenerator(controller);
             
             //proxy = new AsynchServiceProxy(config.getProcessId());
         
@@ -138,7 +126,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             
             initLog();
             
-            log.startNewFile(nextNumber);
+            log.startNewFile(-1, config.getCheckpointPeriod());
             
             //write genesis block
             byte[][] hashes = log.markEndTransactions();
@@ -150,12 +138,14 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                         
             nextNumber++;
             
-            log.startNewFile(nextNumber);
+            //log.startNewFile(nextNumber);
             
         } catch (Exception ex) {
             
             throw new RuntimeException("Could not set replica context", ex);
         }
+        
+        ((BlockchainStateManager) getStateManager()).setTOMgen(TOMgen);
         getStateManager().askCurrentConsensusId();
     }
 
@@ -165,34 +155,21 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         logger.info("CID requested: " + cid + ". Last checkpoint: " + lastCheckpoint + ". Last CID: " + log.getLastStoredCID());
         
         //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-        boolean hasCached = log.getFirstCachedCID() != -1 && log.getLastCachedCID() != -1;
-        boolean hasState = cid >= lastCheckpoint && cid <= log.getLastStoredCID();
+        //boolean hasCached = log.getFirstCachedCID() != -1 && log.getLastCachedCID() != -1;
+        //boolean hasState = cid >= lastCheckpoint && cid <= log.getLastStoredCID();
         
         CommandsInfo[] batches = null;
 
         int lastCID = -1;
         
         BlockchainState ret = new BlockchainState();
-        
-        if (hasState) {
-                        
-            logger.info("Constructing ApplicationState up until CID " + cid);
-            
-            int size = cid - lastCheckpoint;
-            
-            if (size > 0 && hasCached) {
                 
-                CommandsInfo[] cached = log.getCached();
-                batches = new CommandsInfo[size];
+        logger.info("Constructing ApplicationState up until CID " + cid);
 
-                for (int i = 0; i < size; i++)
-                    batches[i] = cached[i];
-            }
-            lastCID = cid;
-            
-            ret = new BlockchainState(batches, lastCheckpoint, lastCID, (sendState ? appState : null), 
-                    appStateHash, config.getProcessId(), nextNumber, lastReconfig, lastBlockHash);
-        } 
+        lastCID = cid;
+
+        ret = new BlockchainState(log.getCachedBatches(), log.getCachedResults(), log.getCachedHeaders(), log.getCachedCertificates(),
+                lastCheckpoint, lastCID, (sendState ? appState : null), appStateHash, config.getProcessId(), nextNumber, lastReconfig, lastBlockHash);
         
         return ret;
     }
@@ -224,31 +201,52 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                     appStateHash = state.getStateHash();
         
                     initLog();
-                    log.setCached(state.getMessageBatches(), state.getLastCheckpointCID(), state.getLastCID());
+                    log.setCached(state.getLastCheckpointCID(), state.getLastCID(), 
+                            state.getBatches(), state.getResults(), state.getHeaders(), state.getCertificates());
                     installSnapshot(state.getSerializedState());
                 }
                 
-                stateManager.fetchBlocks(nextNumber-1);
+                stateManager.fetchBlocks(lastCID);
                 
-                log.startNewFile(nextNumber);
+                log.startFileFromCache(config.getCheckpointPeriod());
                 
                 for (int cid = lastCheckpointCID + 1; cid <= lastCID; cid++) {
-
+                    
                     logger.debug("Processing and verifying batched requests for cid " + cid);
-                    if (state.getMessageBatch(cid) == null) {
-                        logger.warn("Consensus " + cid + " is null!");
-                    }
 
-                    CommandsInfo cmdInfo = state.getMessageBatch(cid); 
+                    CommandsInfo cmdInfo = state.getBatches().get(cid);
                     byte[][] commands = cmdInfo.commands; // take a batch
                     MessageContext[] msgCtxs = cmdInfo.msgCtx;
 
-                    executeBatch(config.getProcessId(), controller.getCurrentViewId(), commands, msgCtxs, msgCtxs[0].isNoOp(), false);
+                    //executeBatch(config.getProcessId(), controller.getCurrentViewId(), commands, msgCtxs, msgCtxs[0].isNoOp(), false);
                     
-                    /*if (commands == null || msgCtxs == null || msgCtxs[0].isNoOp()) {
+                    if (commands == null || msgCtxs == null || msgCtxs[0].isNoOp()) {
                         continue;
-                    }*/
+                    }
                     
+                    LinkedList<byte[]> transList = new LinkedList<>();
+                    LinkedList<MessageContext> ctxList = new LinkedList<>(); 
+                                
+                    for (int i = 0; i < commands.length; i++) {
+                        
+                        if (!controller.isCurrentViewMember(msgCtxs[i].getSender())) {
+                            
+                            transList.add(commands[i]);
+                            ctxList.add(msgCtxs[i]);
+                        }
+                    }
+                    
+                    if (transList.size() > 0) {
+                
+                        byte[][] transApp = new byte[transList.size()][];
+                        MessageContext[] ctxApp = new MessageContext[ctxList.size()];
+
+                        transList.toArray(transApp);
+                        ctxList.toArray(ctxApp);
+                    
+                        appExecuteBatch(transApp, ctxApp, false);
+                    
+                    }
                 }
 
             } catch (Exception e) {
@@ -268,7 +266,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
 
     @Override
     public StateManager getStateManager() {
-        if (stateManager == null) {
+        if (stateManager == null) {            
             stateManager = new BlockchainStateManager(true, true); // might need to be other implementation
         }
         return stateManager;
@@ -362,6 +360,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             LinkedList<byte[]> transList = new LinkedList<>();
             LinkedList<MessageContext> ctxList = new LinkedList<>(); 
             
+            log.storeTransactions(cid, operations, msgCtxs);
+            
             for (int i = 0; i < operations.length ; i++) {
                 
                 if (controller.isCurrentViewMember(msgCtxs[i].getSender())) {
@@ -395,6 +395,15 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                                 timeout = true;
                             }
                         }
+                    } else if ((new String(b)).equals("STATE")) {
+                                                
+                        int id = buff.getInt();
+                        
+                        BlockchainSMMessage smsg = new BlockchainSMMessage(msgCtxs[i].getSender(),
+                            cid, TOMUtil.SM_REQUEST, id, null, null, -1, -1);
+                        
+                        stateMsgs.add(smsg);
+                        
                     }
                     
                 } else if (!noop) {
@@ -403,9 +412,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                     ctxList.add(msgCtxs[i]);
                 }
                 
-            }
-                   
-            log.storeTransactions(cid, operations, msgCtxs);
+            }            
             
             if (transList.size() > 0) {
                 
@@ -431,7 +438,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                     this.results.add(reply);
                 }
                 
-                if (timer != null) timer.cancel();
+                /*if (timer != null) timer.cancel();
                 timer = new Timer();
 
                 timer.schedule(new TimerTask() {
@@ -449,7 +456,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                         sendTimeout(buff.array());
                     }
                     
-                }, config.getLogBatchTimeout());
+                }, config.getLogBatchTimeout());*/
             } else {
                 
                 log.storeResults(new byte[0][]);
@@ -457,8 +464,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             
             boolean isCheckpoint = cid % config.getCheckpointPeriod() == 0;
             
-            if (timeout || isCheckpoint || /*(cid % config.getLogBatchLimit() == 0)*/ 
-                    (this.results.size() > config.getMaxBatchSize() * config.getLogBatchLimit())) {
+            //if (timeout || isCheckpoint || (cid % config.getLogBatchLimit() == 0)
+            //        /*(this.results.size() > config.getMaxBatchSize() * config.getLogBatchLimit())*/) {
                 
                 byte[][] hashes = log.markEndTransactions();
                 
@@ -547,10 +554,19 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                 
                 log.sync();
                 
-                log.startNewFile(nextNumber);
+                if (isCheckpoint) {
+                    log.startNewFile(cid, config.getCheckpointPeriod());
+                }
                 
                 timeouts.remove(nextNumber-1);
+            //}
+            
+            for (SMMessage smsg : stateMsgs) {
+                
+                stateManager.SMRequestDeliver(smsg, config.isBFT());
             }
+            
+            stateMsgs.clear();
             
             return replies;
         } catch (IOException | NoSuchAlgorithmException | InterruptedException ex) {
@@ -567,10 +583,9 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         
             timerLock.lock();
                     
-            TOMMessage commitMsg = new TOMMessage(config.getProcessId(),
-                    session, commitSeq, requestID, payload, controller.getCurrentViewId(), TOMMessageType.UNORDERED_REQUEST);
+            TOMMessage commitMsg = TOMgen.getNextUnordered(payload);
 
-            byte[] data = serializeTOMMsg(commitMsg);
+            byte[] data = TOMMessageGenerator.serializeTOMMsg(commitMsg);
 
             commitMsg.serializedMessage = data;
             commitMsg.serializedMessageSignature = TOMUtil.signMessage(controller.getStaticConf().getPrivateKey(), data);
@@ -578,9 +593,6 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
 
             commSystem.send(controller.getCurrentViewAcceptors(),
                         new ForwardedMessage(this.controller.getStaticConf().getProcessId(), commitMsg));
-
-            requestID++;
-            commitSeq++;
         
         } finally {
             
@@ -594,10 +606,9 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             
             timerLock.lock();
             
-            TOMMessage timeoutMsg = new TOMMessage(config.getProcessId(),
-                    session, timeoutSeq, requestID, payload, controller.getCurrentViewId(), TOMMessageType.ORDERED_REQUEST);
+            TOMMessage timeoutMsg = TOMgen.getNextOrdered(payload);
             
-            byte[] data = serializeTOMMsg(timeoutMsg);
+            byte[] data = TOMMessageGenerator.serializeTOMMsg(timeoutMsg);
             
             timeoutMsg.serializedMessage = data;
             
@@ -611,9 +622,6 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             commSystem.send(controller.getCurrentViewAcceptors(),
                     new ForwardedMessage(this.controller.getStaticConf().getProcessId(), timeoutMsg));
             
-            requestID++;
-            timeoutSeq++;
-            
         } catch (IOException ex) {
             logger.error("Error while sending timeout message.", ex);
         } finally {
@@ -621,18 +629,6 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             timerLock.unlock();
         }
         
-    }
-    
-    private byte[] serializeTOMMsg(TOMMessage msg) throws IOException {
-        
-        DataOutputStream dos = null;
-            byte[] data = null;
-            
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        dos = new DataOutputStream(baos);
-        msg.wExternal(dos);
-        dos.flush();
-        return baos.toByteArray();
     }
     
     private byte[] computeBlockHash(int number, int lastCheckpoint, int lastReconf,  byte[] transHash, byte[] resultsHash, byte[] prevBlock) throws NoSuchAlgorithmException {

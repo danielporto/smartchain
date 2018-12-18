@@ -168,11 +168,11 @@ public interface BatchLogger {
     public void storeTransactions(int cid, byte[][] requests, MessageContext[] contexts) throws IOException, InterruptedException;
     
     public void storeResults(byte[][] results) throws IOException, InterruptedException;
-    
-    public void storeCertificate(Map<Integer, byte[]> sigs) throws IOException, InterruptedException;
-    
+        
     public void storeHeader(int number, int lastCheckpoint, int lastReconf,  byte[] transHash,  byte[] resultsHash,  byte[] prevBlock) throws IOException, InterruptedException;
     
+    public void storeCertificate(Map<Integer, byte[]> sigs) throws IOException, InterruptedException;
+
     public byte[][] markEndTransactions() throws IOException, InterruptedException;
     
     public void sync() throws IOException, InterruptedException;
@@ -183,11 +183,20 @@ public interface BatchLogger {
     
     public int getLastStoredCID();
     
-    public CommandsInfo[] getCached();
+    public Map<Integer,CommandsInfo> getCachedBatches();
+    
+    public Map<Integer,byte[][]> getCachedResults();
+    
+    public Map<Integer,byte[]> getCachedHeaders();
+    
+    public Map<Integer,byte[]> getCachedCertificates();
     
     public void clearCached();
     
-    public void setCached(CommandsInfo[] cmds, int firstCID, int lastCID);
+    public void startFileFromCache(int period) throws IOException, InterruptedException;
     
-    public void startNewFile(int blockNumber) throws IOException;
+    public void setCached(int firstCID, int lastCID, Map<Integer, CommandsInfo> batches,
+            Map<Integer, byte[][]> results, Map<Integer, byte[]> headers, Map<Integer, byte[]> certificates);
+    
+    public void startNewFile(int cid, int period) throws IOException;
 }

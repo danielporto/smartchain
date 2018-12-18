@@ -151,12 +151,17 @@ public abstract class StateManager {
         int counter = 0;
         for (CertifiedDecision cDec : senderProofs.values()) {
                                     
+            logger.info("{} && ({} == {}) && {}",(cDec != null),cid, proofIsConsistent(cDec.getConsMessages()), lc.hasValidProof(cDec));
+            
             if (cDec != null && cid == proofIsConsistent(cDec.getConsMessages()) && lc.hasValidProof(cDec)) {
                 counter++;
             }
             
         }
         boolean result = counter > SVController.getQuorum();
+        
+        logger.info("Enough proofs: " + result);
+        
         return result;
     }
     

@@ -5,9 +5,15 @@
  */
 package bftsmart.tom.server.defaultservices.blockchain.strategy;
 
+import bftsmart.statemanagement.ApplicationState;
 import bftsmart.statemanagement.standard.StandardStateManager;
 import bftsmart.tom.core.DeliveryThread;
 import bftsmart.tom.core.TOMLayer;
+import bftsmart.tom.core.messages.ForwardedMessage;
+import bftsmart.tom.core.messages.TOMMessage;
+import bftsmart.tom.core.messages.TOMMessageType;
+import bftsmart.tom.server.defaultservices.CommandsInfo;
+import bftsmart.tom.server.defaultservices.blockchain.TOMMessageGenerator;
 import bftsmart.tom.util.TOMUtil;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -27,6 +33,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -45,12 +52,18 @@ public class BlockchainStateManager extends StandardStateManager implements Runn
     private String logDir = null;
     private ExecutorService outExec = null;
     private ExecutorService inExec = null;
+    private TOMMessageGenerator TOMgen;
 
     public BlockchainStateManager (boolean containsResults, boolean containsCertificate) {
         
         this.containsResults = containsResults;
         this.containsCertificate = containsCertificate;
 
+    }
+    
+    public void setTOMgen(TOMMessageGenerator TOMgen) {
+        
+        this.TOMgen = TOMgen;
     }
     
     @Override
@@ -82,6 +95,88 @@ public class BlockchainStateManager extends StandardStateManager implements Runn
         }
     }
 
+    @Override
+    protected boolean enoughReplies() {
+        
+        //we override this method so that we can also verify that all other data related to blocks are consistent
+        
+        if (senderStates.size() > SVController.getCurrentViewF()) {
+            
+            int count = 0;
+            
+            for (ApplicationState s : senderStates.values()) {
+                
+                int nextNumber = -2;
+                int lastReconfig = -2;
+                byte[] lastBlockHash = null;
+                
+                Map<Integer,CommandsInfo> cachedBatches = null;
+                Map<Integer,byte[][]> cachedResults = null;
+                Map<Integer,byte[]> cachedHeaders = null;
+                Map<Integer,byte[]> cachedCertificates = null;
+    
+                BlockchainState state = (BlockchainState) s;
+                
+                if (nextNumber == -2) nextNumber = state.nextNumber;
+                if (lastReconfig == -2) lastReconfig = state.lastReconfig;
+                if (lastBlockHash == null) lastBlockHash = state.lastBlockHash;
+                
+                if (cachedBatches == null) cachedBatches = state.cachedBatches;
+                if (cachedResults == null) cachedResults = state.cachedResults;
+                if (cachedHeaders == null) cachedHeaders = state.cachedHeaders;
+                if (cachedCertificates == null) cachedCertificates = state.cachedCertificates;
+                
+                if (nextNumber == state.nextNumber && lastReconfig == state.lastReconfig && Arrays.equals(lastBlockHash, state.lastBlockHash)
+                        && state.cachedBatches.equals(cachedBatches) && state.cachedResults.equals(cachedResults) && state.cachedHeaders.equals(cachedHeaders)) {
+                 
+                    
+                    //TODO: verify certificates
+                    
+                    count++;
+                    
+                    
+                }
+                
+            }
+            
+            return count > SVController.getCurrentViewF();
+        }
+        else return false;
+    }
+    
+    @Override
+    protected void requestState() {
+        
+        try {
+            
+            ordered = true;
+            changeReplica(); // always ask the state/ledger to a different replica
+            
+            ByteBuffer buff = ByteBuffer.allocate((Integer.BYTES * 2) + "STATE".getBytes().length);
+            buff.putInt("STATE".getBytes().length);
+            buff.put("STATE".getBytes());
+            buff.putInt(replica);
+            
+            TOMMessage stateMsg = TOMgen.getNextOrdered(buff.array());
+            
+            byte[] data = TOMMessageGenerator.serializeTOMMsg(stateMsg);
+            
+            stateMsg.serializedMessage = data;
+            
+            if (SVController.getStaticConf().getUseSignatures() == 1) {
+                
+                stateMsg.serializedMessageSignature = TOMUtil.signMessage(SVController.getStaticConf().getPrivateKey(), data);
+                stateMsg.signed = true;
+                
+            }
+            
+            tomLayer.getCommunication().send(SVController.getCurrentViewOtherAcceptors(),
+                    new ForwardedMessage(SVController.getStaticConf().getProcessId(), stateMsg));
+        } catch (IOException ex) {
+            logger.error("Error asking for the state", ex);
+        }
+    }
+        
     private boolean validateBlock(byte[] block) throws NoSuchAlgorithmException {
                 
         ByteBuffer buff = ByteBuffer.wrap(block);
@@ -215,35 +310,37 @@ public class BlockchainStateManager extends StandardStateManager implements Runn
         
         return true;
     }
-    public void fetchBlocks(int blockNumber) {
+    public void fetchBlocks(int lastCID) {
         
         File directory = new File(logDir);
         
         File [] files = directory.listFiles((File pathname) -> 
                 pathname.getName().startsWith(""+ SVController.getStaticConf().getProcessId()) && pathname.getName().endsWith(".log"));
         
-        int[] blocks = new int[files.length]; 
+        int[] cids = new int[files.length]; 
         
         for (int i = 0; i < files.length; i++) {
+            
+            String[] tokens = files[i].getName().split("[.]");
                         
-            logger.info("Got block {}",files[i].getName().split("[.]")[1]);
-            blocks[i] = new Integer(files[i].getName().split("[.]")[1]).intValue();
+            logger.info("Got cids {} through {}",tokens[1],tokens[2]);
+            cids[i] = new Integer(tokens[1]).intValue();
             
         }
             
-        Arrays.sort(blocks);
+        Arrays.sort(cids);
         
-        int lastBlock = blocks[blocks.length-1];
+        int myLastCID = cids[cids.length-1]; 
         
         try {
             logger.info("Fetching blocks from {} to {} (exclusively) from replica {} at port {}",
-                    lastBlock, blockNumber,SVController.getCurrentView().getAddress(replica).getHostName(),SVController.getStaticConf().getPort(replica) + 2);
+                    myLastCID, lastCID,SVController.getCurrentView().getAddress(replica).getHostName(),SVController.getStaticConf().getPort(replica) + 2);
             
-            final CountDownLatch latch = new CountDownLatch(blockNumber-lastBlock);
+            final CountDownLatch latch = new CountDownLatch((lastCID-myLastCID) / SVController.getStaticConf().getCheckpointPeriod());
             
-            for (int i = lastBlock; i < blockNumber; i++) {
+            for (int i = myLastCID; i < lastCID; i += SVController.getStaticConf().getCheckpointPeriod()) {
                 
-                final int number = i;
+                final int cid = i;
                                     
                 Socket clientSocket = new Socket( SVController.getCurrentView().getAddress(replica).getHostName() , SVController.getStaticConf().getPort(replica) + 2 );
 
@@ -260,10 +357,10 @@ public class BlockchainStateManager extends StandardStateManager implements Runn
                             DataOutputStream outToServer = new DataOutputStream(clientSocket.getOutputStream());
                             InputStream inFromServer = clientSocket.getInputStream();
 
-                            outToServer.writeInt(number);
+                            outToServer.writeInt(cid);
 
-                            String blockPath = logDir +
-                                    String.valueOf(SVController.getStaticConf().getProcessId()) + "." + number + ".log";
+                            String blockPath = logDir + String.valueOf(SVController.getStaticConf().getProcessId()) +
+                                    "." + cid + "." +  (cid+SVController.getStaticConf().getCheckpointPeriod()) + ".log";
 
                             ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
@@ -277,7 +374,7 @@ public class BlockchainStateManager extends StandardStateManager implements Runn
                                 bytesRead = inFromServer.read(aByte);
                             } while (bytesRead != -1);
                             
-                            logger.info("finished block {}", number);
+                            logger.info("finished cids {} through {}", cid, (cid+SVController.getStaticConf().getCheckpointPeriod()));
                             
                             byte[] block = baos.toByteArray();
                             

@@ -17,8 +17,10 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.TreeMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,8 +36,10 @@ public class BufferBatchLogger implements BatchLogger {
     private int lastCachedCID = -1;
     private int firstCachedCID = -1;
     private int lastStoredCID = -1;
-    private LinkedList<CommandsInfo> cachedBatches;
-    private LinkedList<byte[][]> cachedResults;
+    private TreeMap<Integer,CommandsInfo> cachedBatches;
+    private TreeMap<Integer,byte[][]> cachedResults;
+    private TreeMap<Integer,byte[]> cachedHeaders;
+    private TreeMap<Integer,byte[]> cachedCertificates;
     private RandomAccessFile log;
     private FileChannel channel;
     private String logPath;
@@ -52,8 +56,11 @@ public class BufferBatchLogger implements BatchLogger {
     
     private BufferBatchLogger(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
         this.id = id;
-        cachedBatches = new LinkedList<>();
-        cachedResults = new LinkedList<>();
+        
+        cachedBatches = new TreeMap<>();
+        cachedResults = new TreeMap<>();
+        cachedHeaders = new TreeMap<>();
+        cachedCertificates = new TreeMap<>();
                  
         transDigest = TOMUtil.getHashEngine();
         resultsDigest = TOMUtil.getHashEngine();
@@ -69,13 +76,12 @@ public class BufferBatchLogger implements BatchLogger {
 
     }
     
-    public void startNewFile(int blockNumber) throws IOException {
+    public void startNewFile(int cid, int period) throws IOException {
         
         if (log != null) log.close();
         if (channel != null) channel.close();
         
-        logPath = logDir + String.valueOf(this.id) + "." + blockNumber + ".log";
-        
+        logPath = logDir + String.valueOf(this.id) + "." + cid + "."  +  (cid + period) + ".log";
         logger.debug("Logging to file " + logPath);
         log = new RandomAccessFile(logPath, "rwd");
         channel = log.getChannel();
@@ -93,14 +99,14 @@ public class BufferBatchLogger implements BatchLogger {
         lastCachedCID = cid;
         lastStoredCID = cid;
         CommandsInfo cmds = new CommandsInfo(requests, contexts);
-        cachedBatches.add(cmds);
+        cachedBatches.put(cid, cmds);
         writeTransactionsToDisk(cid, cmds);
         
     }
     
     public void storeResults(byte[][] results) throws IOException{
      
-        cachedResults.add(results);
+        cachedResults.put(lastStoredCID, results);
         writeResultsToDisk(results);
     }
     
@@ -119,6 +125,8 @@ public class BufferBatchLogger implements BatchLogger {
         
         ByteBuffer buff = prepareHeader(number, lastCheckpoint, lastReconf, transHash, resultsHash, prevBlock);
                 
+        cachedHeaders.put(lastStoredCID, buff.array());
+        
         //channel.write(buff);
         buffers.add(buff);
         
@@ -130,6 +138,8 @@ public class BufferBatchLogger implements BatchLogger {
         logger.debug("writting certificate to disk");
         
         ByteBuffer buff = prepareCertificate(sigs);
+        
+        cachedCertificates.put(lastStoredCID, buff.array());
         
         //channel.write(buff);
         buffers.add(buff);
@@ -149,29 +159,78 @@ public class BufferBatchLogger implements BatchLogger {
         return lastStoredCID;
     }
     
-    public CommandsInfo[] getCached() {
+    public Map<Integer, CommandsInfo> getCachedBatches() {
         
-        CommandsInfo[] cmds = new CommandsInfo[cachedBatches.size()];
-        cachedBatches.toArray(cmds);
-        return cmds;
+        return cachedBatches;
         
     }
+    
+    public Map<Integer, byte[][]> getCachedResults() {
+        
+        return cachedResults;
+        
+    }
+    
+    public Map<Integer, byte[]> getCachedHeaders() {
+        
+        return cachedHeaders;
+        
+    }
+    
+    public Map<Integer, byte[]> getCachedCertificates() {
+        
+        return cachedCertificates;
+        
+    }
+    
     public void clearCached() {
         
         cachedBatches.clear();
+        cachedResults.clear();
+        cachedHeaders.clear();
+        cachedCertificates.clear();
+        
         firstCachedCID = -1;
         lastCachedCID = -1;
     }
     
-    public void setCached(CommandsInfo[] cmds, int firstCID, int lastCID) {
+    public void setCached(int firstCID, int lastCID, Map<Integer, CommandsInfo> batches,
+            Map<Integer, byte[][]> results, Map<Integer, byte[]> headers, Map<Integer, byte[]> certificates) {
         
-        cachedBatches.clear();
+        clearCached();
         
-        for (CommandsInfo  cmd : cmds) cachedBatches.add(cmd);
+        
+        cachedBatches.putAll(batches);
+        cachedResults.putAll(results);
+        cachedHeaders.putAll(headers);
+        cachedCertificates.putAll(certificates);
         
         lastStoredCID = firstCID;
         firstCachedCID = firstCID;
         lastCachedCID = lastCID;
+    }
+    
+    public void startFileFromCache(int period) throws IOException {
+        
+        Integer[] cids = new Integer[cachedBatches.keySet().size()];
+        
+        cachedBatches.keySet().toArray(cids);
+        
+        Arrays.sort(cids);
+        
+        startNewFile(cids[0],period);
+        
+        for (int cid : cids) {
+            
+            writeTransactionsToDisk(cid, cachedBatches.get(cid));
+            markEndTransactions();
+            writeResultsToDisk(cachedResults.get(cid));
+            buffers.add(ByteBuffer.wrap(cachedHeaders.get(cid)));
+            buffers.add(ByteBuffer.wrap(cachedCertificates.get(cid)));
+            
+        }
+        
+        sync();
     }
     
     private void writeTransactionsToDisk(int cid, CommandsInfo commandsInfo) throws IOException {
