@@ -43,9 +43,11 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
 import org.apache.commons.codec.binary.Base64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,6 +90,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     private Map<Integer, Set<Integer>> timeouts;
     private Set<SMMessage> stateMsgs;
     private int currentCommit;
+    private LinkedBlockingQueue<Map.Entry<Integer,byte[]>> commitQueue;
+    private Thread commitThread = null;
     
     public StrongBlockchainRecoverable() {
         
@@ -102,6 +106,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         certificates =  new HashMap<>();
         timeouts =  new HashMap<>();
         stateMsgs = new HashSet<>();
+        
+        commitQueue = new LinkedBlockingQueue<>();
     }
     
     @Override
@@ -264,6 +270,46 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         return lastCID;
     }
 
+    private void processCommit(byte[] command, int sender) {
+        
+        ByteBuffer buff = ByteBuffer.wrap(command);
+            
+        int cid = buff.getInt();
+        byte[] sig = new byte[buff.getInt()];
+        buff.get(sig);
+
+        if (currentCommit <= cid
+                /*&& TOMUtil.verifySignature(controller.getStaticConf().getPublicKey(msgCtx.getSender()), lastBlockHash, sig*)*/) {
+
+            //TODO: there are two bug that will cause the system to block if signature validation is performed. One is due to the fact
+            // that hash headers are not deterministic due to the consensus proof contained in the context object. The other I think
+            //it is a rece condition, but I don't know where yet.
+
+            logger.debug("Received valid signature from {}: {}", sender, Base64.encodeBase64String(sig));
+
+            mapLock.lock();
+
+            Map<Integer,byte[]> signatures = certificates.get(cid);
+            if (signatures == null) {
+
+                signatures = new HashMap<>();
+                certificates.put(cid, signatures);
+            }
+
+            signatures.put(sender, sig);
+
+            logger.debug("got {} sigs for CID {}", signatures.size(), cid);
+
+            if (currentCommit == cid && signatures.size() > controller.getQuorum()) {
+
+                logger.info("Signaling main thread");
+                gotCertificate.signalAll();
+            }
+
+            mapLock.unlock();
+
+        }
+    }
     @Override
     public StateManager getStateManager() {
         if (stateManager == null) {            
@@ -294,44 +340,30 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     public TOMMessage executeUnordered(int processID, int viewID, boolean isHashedReply, byte[] command, MessageContext msgCtx) {
         
         if (controller.isCurrentViewMember(msgCtx.getSender())) {
-                        
-            ByteBuffer buff = ByteBuffer.wrap(command);
-            
-            int cid = buff.getInt();
-            byte[] sig = new byte[buff.getInt()];
-            buff.get(sig);
-            
-            if (currentCommit <= cid
-                    /*&& TOMUtil.verifySignature(controller.getStaticConf().getPublicKey(msgCtx.getSender()), lastBlockHash, sig*)*/) {
-                
-                //TODO: there are two bug that will cause the system to block if signature validation is performed. One is due to the fact
-                // that hash headers are not deterministic due to the consensus proof contained in the context object. The other I think
-                //it is a rece condition, but I don't know where yet.
-            
-                logger.debug("Received valid signature from {}: {}", msgCtx.getSender(), Base64.encodeBase64String(sig));
-                
-                mapLock.lock();
-
-                Map<Integer,byte[]> signatures = certificates.get(cid);
-                if (signatures == null) {
-
-                    signatures = new HashMap<>();
-                    certificates.put(cid, signatures);
+              
+            Map.Entry<Integer, byte[]> entry = new Map.Entry<Integer, byte[]>() {
+                @Override
+                public Integer getKey() {
+                    return msgCtx.getSender();
                 }
 
-                signatures.put(msgCtx.getSender(), sig);
-
-                logger.debug("got {} sigs for CID {}", signatures.size(), cid);
-
-                if (currentCommit == cid && signatures.size() > controller.getQuorum()) {
-
-                    logger.info("Signaling main thread");
-                    gotCertificate.signalAll();
+                @Override
+                public byte[] getValue() {
+                    return command;
                 }
 
-                mapLock.unlock();
+                @Override
+                public byte[] setValue(byte[] value) {
+                    return null;
+                }
+            };
             
+            try {
+                commitQueue.put(entry);
+            } catch (InterruptedException ex) {
+                logger.error("Error while inserting to queue", ex);
             }
+            //processCommit(command, msgCtx);
             return null;
         }
         else {
@@ -350,6 +382,27 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     }
     
     private TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs, boolean noop, boolean fromConsensus) {
+    
+        if (commitThread == null) {
+            
+            commitThread = new Thread() {
+              
+                public void run() {
+                 
+                    while(true) {
+                        
+                        try {
+                            Map.Entry<Integer, byte[]> entry = commitQueue.take();
+                            processCommit(entry.getValue(), entry.getKey());
+                        } catch (InterruptedException ex) {
+                            logger.error("Error while taking element from queue",ex);
+                        }
+                    } 
+                }
+            };
+            
+            commitThread.start();
+        }
         
         int cid = msgCtxs[0].getConsensusId();
         TOMMessage[] replies = new TOMMessage[0];
