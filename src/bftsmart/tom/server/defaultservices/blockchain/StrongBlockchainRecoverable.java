@@ -339,6 +339,15 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
     @Override
     public TOMMessage executeUnordered(int processID, int viewID, boolean isHashedReply, byte[] command, MessageContext msgCtx) {
         
+        while (controller == null) { //TODO: eventually change this to a signal/wait mechanism
+         
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ex) {
+                logger.error("interruption problem", ex);
+            }
+        }
+        
         if (controller.isCurrentViewMember(msgCtx.getSender())) {
               
             Map.Entry<Integer, byte[]> entry = new Map.Entry<Integer, byte[]>() {
