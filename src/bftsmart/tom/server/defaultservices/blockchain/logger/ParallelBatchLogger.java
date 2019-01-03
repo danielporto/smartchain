@@ -5,9 +5,9 @@
  */
 package bftsmart.tom.server.defaultservices.blockchain.logger;
 
+import bftsmart.tom.server.defaultservices.blockchain.BatchLogger;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.server.defaultservices.CommandsInfo;
-import bftsmart.tom.server.defaultservices.blockchain.BatchLogger;
 import bftsmart.tom.util.TOMUtil;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -101,6 +101,24 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
         
     }
     
+    public void openFile(int cid, int period) throws IOException {
+        
+        if (log != null) log.close();
+        if (channel != null) channel.close();
+        
+        logPath = logDir + String.valueOf(this.id) + "." + cid + "."  +  (cid + period) + ".log";
+        
+        logger.debug("Opening file " + logPath);
+        
+        File f = new File(logPath);
+        long fileLength = f.length();
+        log = new RandomAccessFile(f, "rwd");
+        log.seek(fileLength);
+    
+        channel = log.getChannel();
+        
+    }
+    
     public static BatchLogger getInstance(int id, String logDir) throws FileNotFoundException, NoSuchAlgorithmException {
         ParallelBatchLogger ret = new ParallelBatchLogger(id, logDir);
         ret.start();        
@@ -120,6 +138,11 @@ public class ParallelBatchLogger extends Thread implements BatchLogger {
     
     public void storeResults(byte[][] results) throws IOException, InterruptedException {
      
+        for (int i = 0; i < results.length ; i++) {
+            
+            if (results[i] == null) results[i] = new byte[0];
+        }
+        
         cachedResults.put(lastStoredCID, results);
         writeResultsToDisk(results);
     }

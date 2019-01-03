@@ -331,6 +331,7 @@ public class BlockchainStateManager extends StandardStateManager implements Runn
         Arrays.sort(cids);
         
         int myLastCID = cids[cids.length-1]; 
+        if (myLastCID == -1) myLastCID++;
         
         try {
             logger.info("Fetching blocks from {} to {} (exclusively) from replica {} at port {}",
@@ -438,7 +439,8 @@ public class BlockchainStateManager extends StandardStateManager implements Runn
                             int blockNumber = inToClient.readInt();
                             
                             String blockPath = logDir + 
-                                    String.valueOf(SVController.getStaticConf().getProcessId()) + "." + blockNumber + ".log";
+                                    String.valueOf(SVController.getStaticConf().getProcessId()) + "." + 
+                                    blockNumber + "." + (blockNumber+SVController.getStaticConf().getCheckpointPeriod()) + ".log";
                             
                             File blockFile = new File(blockPath);
                             byte[] filearray = new byte[(int) blockFile.length()];

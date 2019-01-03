@@ -199,4 +199,6 @@ public interface BatchLogger {
             Map<Integer, byte[][]> results, Map<Integer, byte[]> headers, Map<Integer, byte[]> certificates);
     
     public void startNewFile(int cid, int period) throws IOException;
+    
+    public void openFile (int cid, int period) throws IOException;
 }

@@ -14,12 +14,10 @@ import bftsmart.reconfiguration.util.TOMConfiguration;
 import bftsmart.statemanagement.ApplicationState;
 import bftsmart.statemanagement.SMMessage;
 import bftsmart.statemanagement.StateManager;
-import bftsmart.statemanagement.standard.StandardStateManager;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ReplicaContext;
 import bftsmart.tom.core.messages.ForwardedMessage;
 import bftsmart.tom.core.messages.TOMMessage;
-import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.server.BatchExecutable;
 import bftsmart.tom.server.Recoverable;
 import bftsmart.tom.server.defaultservices.CommandsInfo;
@@ -31,7 +29,6 @@ import bftsmart.tom.server.defaultservices.blockchain.strategy.BlockchainStateMa
 import bftsmart.tom.util.BatchBuilder;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
@@ -45,10 +42,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -202,9 +196,16 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                     
                 }
                 
+                writeCheckpointToDisk(lastCheckpoint, appState);
+                
                 stateManager.fetchBlocks(lastCID);
                 
-                log.startFileFromCache(config.getCheckpointPeriod());
+                if (lastCID % config.getCheckpointPeriod() == 0) {
+                    log.startFileFromCache(config.getCheckpointPeriod());
+                }
+                else {
+                    log.openFile(lastCheckpoint,config.getCheckpointPeriod());
+                }
                 
                 for (int cid = lastCheckpointCID + 1; cid <= lastCID; cid++) {
 

@@ -47,7 +47,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.logging.Level;
 import org.apache.commons.codec.binary.Base64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -212,9 +211,16 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                     installSnapshot(state.getSerializedState());
                 }
                 
+                writeCheckpointToDisk(lastCheckpoint, appState);
+                
                 stateManager.fetchBlocks(lastCID);
                 
-                log.startFileFromCache(config.getCheckpointPeriod());
+                if (lastCID % config.getCheckpointPeriod() == 0) {
+                    log.startFileFromCache(config.getCheckpointPeriod());
+                }
+                else {
+                    log.openFile(lastCheckpoint,config.getCheckpointPeriod());
+                }
                 
                 for (int cid = lastCheckpointCID + 1; cid <= lastCID; cid++) {
                     
