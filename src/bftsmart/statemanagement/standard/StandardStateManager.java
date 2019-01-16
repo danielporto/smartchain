@@ -290,6 +290,7 @@ public class StandardStateManager extends StateManager {
 
                         dt.deliverLock();
                         waitingCID = -1;
+                        ordered = false;
                         dt.update(state);
 
                         if (!appStateOnly && execManager.stopped()) {
