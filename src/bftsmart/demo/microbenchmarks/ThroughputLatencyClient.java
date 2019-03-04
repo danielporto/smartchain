@@ -251,13 +251,21 @@ public class ThroughputLatencyClient {
 
                 if (verbose && (req % 1000 == 0)) System.out.println(this.id + " // " + req + " operations sent!");
 
-		if (interval > 0) {
-                    try {
+		try {
+                        
                         //sleeps interval ms before sending next request
-                        Thread.sleep(interval);
+                        if (interval > 0) {
+                            
+                            Thread.sleep(interval);
+                        }
+                        else if (this.rampup > 0) {
+                            Thread.sleep(this.rampup);
+                        }
+                        this.rampup -= 100;
+                        
                     } catch (InterruptedException ex) {
+                        ex.printStackTrace();
                     }
-                }
             }
 
             Storage st = new Storage(numberOfOps / 2);
