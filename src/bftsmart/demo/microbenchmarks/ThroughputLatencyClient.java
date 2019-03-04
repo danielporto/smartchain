@@ -20,6 +20,7 @@ import java.io.IOException;
 import bftsmart.tom.ServiceProxy;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
+import java.io.FileWriter;
 import java.nio.ByteBuffer;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
@@ -38,6 +39,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * Example client that updates a BFT replicated service (a counter).
@@ -46,6 +48,8 @@ import java.util.concurrent.Future;
 public class ThroughputLatencyClient {
 
     public static int initId = 0;
+    static LinkedBlockingQueue<String> latencies;
+    static Thread writerThread;
     
     public static String privKey =  "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXa3mln4anewXtqrM" +
                                     "hMw6mfZhslkRa/j9P790ToKjlsihRANCAARnxLhXvU4EmnIwhVl3Bh0VcByQi2um" +
@@ -72,6 +76,32 @@ public class ThroughputLatencyClient {
         }
 
         initId = Integer.parseInt(args[0]);
+        latencies = new LinkedBlockingQueue<>();
+        writerThread = new Thread() {
+            
+            public void run() {
+                
+                FileWriter f = null;
+                try {
+                    f = new FileWriter("./latencies_" + initId + ".txt");
+                    while (true) {
+                        
+                        f.write(latencies.take());
+                    }   
+                    
+                } catch (IOException | InterruptedException ex) {
+                    ex.printStackTrace();
+                } finally {
+                    try {
+                        f.close();
+                    } catch (IOException ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            }
+        };
+        writerThread.start();
+        
         int numThreads = Integer.parseInt(args[1]);
 
         int numberOfOps = Integer.parseInt(args[2]);
@@ -202,10 +232,19 @@ public class ThroughputLatencyClient {
             for (int i = 0; i < numberOfOps / 2; i++, req++) {
                 if (verbose) System.out.print("Sending req " + req + "...");
 
+                long last_send_instant = System.nanoTime();
+                
                 if(readOnly)
                         proxy.invokeUnordered(request);
                 else
                         proxy.invokeOrdered(request);
+                long latency = System.nanoTime() - last_send_instant;
+                
+                try {
+                    latencies.put(id + "\t" + System.currentTimeMillis() + "\t" + latency + "\n");
+                } catch (InterruptedException ex) {
+                    ex.printStackTrace();
+                }
                         
                 if (verbose) System.out.println(" sent!");
 
@@ -232,9 +271,16 @@ public class ThroughputLatencyClient {
                         proxy.invokeUnordered(request);
                 else
                         proxy.invokeOrdered(request);
+                long latency = System.nanoTime() - last_send_instant;
+                
+                try {
+                    latencies.put(id + "\t" + System.currentTimeMillis() + "\t" + latency + "\n");
+                } catch (InterruptedException ex) {
+                    ex.printStackTrace();
+                }
                         
                 if (verbose) System.out.println(this.id + " // sent!");
-                st.store(System.nanoTime() - last_send_instant);
+                st.store(latency);
 
                 if (interval > 0) {
                     try {
