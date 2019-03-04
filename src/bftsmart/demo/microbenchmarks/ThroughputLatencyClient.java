@@ -168,7 +168,7 @@ public class ThroughputLatencyClient {
         boolean verbose;
         ServiceProxy proxy;
         byte[] request;
-        int rampup = 3000;
+        int rampup = 1000;
         
         public Client(int id, int numberOfOps, int requestSize, int interval, boolean readOnly, boolean verbose, int sign) {
             super("Client "+id);
@@ -235,14 +235,15 @@ public class ThroughputLatencyClient {
 
                 long last_send_instant = System.nanoTime();
                 
+                byte[] reply = null;
                 if(readOnly)
-                        proxy.invokeUnordered(request);
+                        reply = proxy.invokeUnordered(request);
                 else
-                        proxy.invokeOrdered(request);
+                        reply = proxy.invokeOrdered(request);
                 long latency = System.nanoTime() - last_send_instant;
                 
                 try {
-                    latencies.put(id + "\t" + System.currentTimeMillis() + "\t" + latency + "\n");
+                    if (reply != null) latencies.put(id + "\t" + System.currentTimeMillis() + "\t" + latency + "\n");
                 } catch (InterruptedException ex) {
                     ex.printStackTrace();
                 }
