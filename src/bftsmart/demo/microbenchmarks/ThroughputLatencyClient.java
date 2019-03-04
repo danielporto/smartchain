@@ -168,6 +168,7 @@ public class ThroughputLatencyClient {
         boolean verbose;
         ServiceProxy proxy;
         byte[] request;
+        int rampup = 3000;
         
         public Client(int id, int numberOfOps, int requestSize, int interval, boolean readOnly, boolean verbose, int sign) {
             super("Client "+id);
@@ -282,13 +283,23 @@ public class ThroughputLatencyClient {
                 if (verbose) System.out.println(this.id + " // sent!");
                 st.store(latency);
 
-                if (interval > 0) {
+                
                     try {
+                        
                         //sleeps interval ms before sending next request
-                        Thread.sleep(interval);
+                        if (interval > 0) {
+                            
+                            Thread.sleep(interval);
+                        }
+                        else if (this.rampup > 0) {
+                            Thread.sleep(this.rampup);
+                        }
+                        this.rampup -= 100;
+                        
                     } catch (InterruptedException ex) {
+                        ex.printStackTrace();
                     }
-                }
+                
                                 
                 if (verbose && (req % 1000 == 0)) System.out.println(this.id + " // " + req + " operations sent!");
             }
