@@ -138,7 +138,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             byte[][] hashes = log.markEndTransactions();
             log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
             
-            log.sync();
+            if (config.isToWriteSyncLog()) log.sync();
                         
             lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
                         
@@ -343,8 +343,8 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             
             boolean isCheckpoint = cid % config.getCheckpointPeriod() == 0;
             
-            if (timeout || isCheckpoint || /*(cid % config.getLogBatchLimit() == 0)*/ 
-                    (this.results.size() > config.getMaxBatchSize() * config.getLogBatchLimit())) {
+            if (timeout || isCheckpoint || (cid % config.getLogBatchLimit() == 0)
+                    /*(this.results.size() > config.getMaxBatchSize() * config.getLogBatchLimit())*/) {
                 
                 byte[][] hashes = log.markEndTransactions();
                 
@@ -408,12 +408,19 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                 mapLock.unlock();
                 
                 log.storeCertificate(copy);
-                                
-                logger.info("Synching log at CID {} and Block {}", cid, (nextNumber - 1));
-                
-                log.sync();
+                                                
+                long ts = System.currentTimeMillis();
+                if (config.isToWriteSyncLog()) {
+                    
+                    logger.info("Synching log at CID {} and Block {}", cid, (nextNumber - 1));
+                    log.sync();
+                    logger.info("Synched log at CID {} and Block {} (elapsed time was {} ms)", cid, (nextNumber - 1), (System.currentTimeMillis() - ts));
+
+                }
                 
                 timeouts.remove(nextNumber-1);
+                
+                if (timer != null) timer.cancel();
             }
             
             return replies;

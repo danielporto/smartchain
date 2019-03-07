@@ -122,7 +122,7 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             byte[] transHash = log.markEndTransactions()[0];
             log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, transHash, new byte[0], lastBlockHash);
             
-            log.sync();
+            if (config.isToWriteSyncLog()) log.sync();
                         
             lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, transHash, lastBlockHash);
                         
@@ -279,8 +279,8 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
             
             boolean isCheckpoint = cid % config.getCheckpointPeriod() == 0;
             
-            if (timeout | isCheckpoint ||  /*(cid % config.getLogBatchLimit() == 0)*/ 
-                    (this.results.size() > config.getMaxBatchSize() * config.getLogBatchLimit())) {
+            if (timeout | isCheckpoint ||  (cid % config.getLogBatchLimit() == 0)
+                    /*(this.results.size() > config.getMaxBatchSize() * config.getLogBatchLimit())*/) {
                 
                 byte[] transHash = log.markEndTransactions()[0];
                 
@@ -298,7 +298,14 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                 
                 logger.info("Synching log at CID " + cid);
                 
-                log.sync();
+                long ts = System.currentTimeMillis();
+                if (config.isToWriteSyncLog()) {
+                    
+                    logger.info("Synching log at CID {} and Block {}", cid, (nextNumber - 1));
+                    log.sync();
+                    logger.info("Synched log at CID {} and Block {} (elapsed time was {} ms)", cid, (nextNumber - 1), (System.currentTimeMillis() - ts));
+
+                }
                 
                 timeouts.remove(nextNumber-1);
             }
