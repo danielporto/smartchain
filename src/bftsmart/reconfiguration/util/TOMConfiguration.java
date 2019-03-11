@@ -368,14 +368,12 @@ public class TOMConfiguration extends Configuration {
                 bindAddress = s;
             }
             
-            //Force this codebase to always deliver to the application a batch with the same size across all replicas
-            sameBatchSize = true;
-            //s = (String) configs.remove("system.samebatchsize");
-            //if (s != null) {
-            //        sameBatchSize = Boolean.parseBoolean(s);
-            //} else {
-            //        sameBatchSize = false;
-            //}
+            s = (String) configs.remove("system.samebatchsize");
+            if (s != null) {
+                    sameBatchSize = Boolean.parseBoolean(s);
+            } else {
+                    sameBatchSize = false;
+            }
             
         } catch (Exception e) {
             logger.error("Could not parse system configuration file",e);
