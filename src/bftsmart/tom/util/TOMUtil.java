@@ -98,6 +98,13 @@ public class TOMUtil {
             }
         }
     
+    public static <T> T[] concat(T[] first, T[] second) {
+        
+    T[] result = Arrays.copyOf(first, first.length + second.length);
+    System.arraycopy(second, 0, result, first.length, second.length);
+    return result;
+  }
+    
     //******* EDUARDO BEGIN **************//
     public static byte[] getBytes(Object o) {
         ByteArrayOutputStream bOut = new ByteArrayOutputStream();
@@ -178,6 +185,8 @@ public class TOMUtil {
             signatureEngine.initVerify(key);
 
             result = verifySignature(signatureEngine, message, signature);
+            logger.debug("Verifying message {} with result: {}", Arrays.toString(message),result);
+            
         } catch (Exception e) {
             logger.error("Failed to verify signature",e);
         }
@@ -185,15 +194,19 @@ public class TOMUtil {
         return result;
     }
 
-    public static boolean verifySigForBenchmark(Signature initializedSignatureEngine, byte[] message, byte[] signature) {
+    public static boolean verifySigForBenchmark(Signature initializedSignatureEngine, byte[] message, byte[] signature, double prob) {
 
-        try {
-            initializedSignatureEngine.update(message);
-            return initializedSignatureEngine.verify(signature);
-        } catch (SignatureException ex) {
-            logger.error("Signature error.",ex);
-            return false;
-        }
+        if (Math.random() <= prob) {
+        
+            try {
+                initializedSignatureEngine.update(message);
+                return initializedSignatureEngine.verify(signature);
+            } catch (SignatureException ex) {
+                logger.error("Signature error.",ex);
+                return false;
+            }
+        
+        } else return true;
     }
     
     /**
@@ -210,7 +223,7 @@ public class TOMUtil {
         initializedSignatureEngine.update(message);
         return initializedSignatureEngine.verify(signature);
     }
-
+    
     public static String byteArrayToString(byte[] b) {
         String s = "";
         for (int i = 0; i < b.length; i++) {

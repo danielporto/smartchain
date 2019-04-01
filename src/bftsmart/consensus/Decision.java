@@ -110,6 +110,9 @@ public class Decision {
     }
 
     public TOMMessage[] getDeserializedValue() {
+        
+        LoggerFactory.getLogger(this.getClass()).debug("getting deserialized value for CID " + cid);
+        
         while (deserializedValue == null) {
             waitForPropose();
             deserializedValue = decisionEpoch.deserializedPropValue;
@@ -129,7 +132,7 @@ public class Decision {
         while (decisionEpoch == null &&
                 decisionEpoch.deserializedPropValue == null) {
             try {
-                LoggerFactory.getLogger(this.getClass()).info("waiting for propose for consensus " + cid);
+                LoggerFactory.getLogger(this.getClass()).info("still waiting for propose for consensus " + cid);
                 Thread.sleep(1);
             } catch (InterruptedException ie) {
                 

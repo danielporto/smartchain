@@ -65,6 +65,7 @@ public class TOMConfiguration extends Configuration {
     private boolean sameBatchSize;
     private boolean fairbatch;
     private String bindAddress;
+    private double sigProb;
     
     /* Tulio Ribeiro*/
     //private Boolean ssltls=true;
@@ -198,6 +199,14 @@ public class TOMConfiguration extends Configuration {
                 useSignatures = Integer.parseInt(s);
             }
 
+            sigProb = 1.00;
+            s = (String) configs.remove("system.communication.sigProb");
+            if (s == null) {
+                sigProb = 1.00;
+            } else {
+                sigProb = Double.parseDouble(s);
+            }
+            
             s = (String) configs.remove("system.totalordermulticast.state_transfer");
             if (s == null) {
                 stateTransferEnabled = false;
@@ -532,6 +541,10 @@ public class TOMConfiguration extends Configuration {
         return useSignatures;
     }
 
+    public double getSigProb() {
+        return sigProb;
+    }
+    
     /**
      * Indicates the checkpoint period used when fetching the state from the application
      */

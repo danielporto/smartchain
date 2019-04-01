@@ -339,11 +339,11 @@ public class NettyClientServerCommunicationSystemServerSide extends SimpleChanne
 				 * Thread(clientSession).start();
 				 */
 				// should I wait for the client?
-			}
-			rl.readLock().unlock();
-		}
-	}
-
+                        }
+                        rl.readLock().unlock();
+                    }
+                }
+                                            
 	@Override
 	public int[] getClients() {
 

@@ -362,7 +362,7 @@ public class ClientsManager {
             
             //it is a valid new message and I have to verify it's signature
             if (isValid &&
-                    ((engine != null && benchMsg != null && benchSig != null && TOMUtil.verifySigForBenchmark(engine, benchMsg, benchSig)) || !request.signed ||
+                    ((engine != null && benchMsg != null && benchSig != null && TOMUtil.verifySigForBenchmark(engine, benchMsg, benchSig, controller.getStaticConf().getSigProb())) || !request.signed ||
                     clientData.verifySignature(request.serializedMessage,
                             request.serializedMessageSignature))) {
                 

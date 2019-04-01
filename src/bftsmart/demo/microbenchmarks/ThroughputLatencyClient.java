@@ -26,12 +26,13 @@ import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.PrivateKey;
 import java.security.Security;
 import java.security.Signature;
 import java.security.SignatureException;
+import java.security.spec.EncodedKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
-import java.util.Base64;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.Random;
@@ -51,7 +52,7 @@ public class ThroughputLatencyClient {
     static LinkedBlockingQueue<String> latencies;
     static Thread writerThread;
     
-    public static String privKey =  "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXa3mln4anewXtqrM" +
+    /*public static String privKey =  "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXa3mln4anewXtqrM" +
                                     "hMw6mfZhslkRa/j9P790ToKjlsihRANCAARnxLhXvU4EmnIwhVl3Bh0VcByQi2um" +
                                     "9KsJ/QdCDjRZb1dKg447voj5SZ8SSZOUglc/v8DJFFJFTfygjwi+27gz";
     
@@ -66,7 +67,11 @@ public class ThroughputLatencyClient {
                                     "EkmTlIJXP7/AyRRSRU38oI8Ivtu4M6NNMEswDgYDVR0PAQH/BAQDAgeAMAwGA1Ud" +
                                     "EwEB/wQCMAAwKwYDVR0jBCQwIoAginORIhnPEFZUhXm6eWBkm7K7Zc8R4/z7LW4H" +
                                     "ossDlCswCgYIKoZIzj0EAwIDRwAwRAIgVikIUZzgfuFsGLQHWJUVJCU7pDaETkaz" +
-                                    "PzFgsCiLxUACICgzJYlW7nvZxP7b6tbeu3t8mrhMXQs956mD4+BoKuNI";
+                                    "PzFgsCiLxUACICgzJYlW7nvZxP7b6tbeu3t8mrhMXQs956mD4+BoKuNI";*/
+    
+    public static String privKey = "MD4CAQAwEAYHKoZIzj0CAQYFK4EEAAoEJzAlAgEBBCBnhIob4JXH+WpaNiL72BlbtUMAIBQoM852d+tKFBb7fg==";
+    public static String pubKey = "MFYwEAYHKoZIzj0CAQYFK4EEAAoDQgAEavNEKGRcmB7u49alxowlwCi1s24ANOpOQ9UiFBxgqnO/RfOl3BJm0qE2IJgCnvL7XUetwj5C/8MnMWi9ux2aeQ==";
+    
     
     @SuppressWarnings("static-access")
     public static void main(String[] args) throws IOException {
@@ -197,12 +202,16 @@ public class ThroughputLatencyClient {
                         eng.initSign(proxy.getViewManager().getStaticConf().getPrivateKey());
                     } else {
 
-                        eng = Signature.getInstance("SHA256withECDSA", "SunEC");
+                        eng = Signature.getInstance("SHA256withECDSA", "BC");
 
-                        KeyFactory kf = KeyFactory.getInstance("EC", "SunEC");
-                        Base64.Decoder b64 = Base64.getDecoder();
-                        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(b64.decode(ThroughputLatencyClient.privKey));
-                        eng.initSign(kf.generatePrivate(spec));
+                        //KeyFactory kf = KeyFactory.getInstance("EC", "BC");
+                        //Base64.Decoder b64 = Base64.getDecoder();
+                        //PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(b64.decode(ThroughputLatencyClient.privKey));
+                        //eng.initSign(kf.generatePrivate(spec));
+                        KeyFactory keyFactory = KeyFactory.getInstance("EC");
+                        EncodedKeySpec privateKeySpec = new PKCS8EncodedKeySpec(org.apache.commons.codec.binary.Base64.decodeBase64(privKey));
+                        PrivateKey privateKey = keyFactory.generatePrivate(privateKeySpec);
+                        eng.initSign(privateKey);
 
                     }
                     eng.update(request);
