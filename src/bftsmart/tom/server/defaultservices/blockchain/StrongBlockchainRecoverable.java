@@ -37,6 +37,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -200,7 +201,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             
             logger.debug("Received signature from {}: {}", msgCtx.getSender(), Base64.encodeBase64String(sig));
 
-            if (currentCommit <= cid) {
+            if (cid >= currentCommit) {
             
                 mapLock.lock();
 
@@ -241,195 +242,267 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
         return TOMUtil.computeHash(getSnapshot());
     }
     
-    private TOMMessage[] executeBatch(int processID, int viewID, byte[][] operations, MessageContext[] msgCtxs, boolean noop) {
+    private TOMMessage[] executeBatch(int processID, int viewID, byte[][] ops, MessageContext[] ctxs, boolean noop) {
         
-        int cid = msgCtxs[0].getConsensusId();
+        //int cid = msgCtxs[0].getConsensusId();
         TOMMessage[] replies = new TOMMessage[0];
         boolean timeout = false;
         
+        logger.info("Received batch with {} txs", ops.length);
+        
+        Map<Integer, Map.Entry<byte[][], MessageContext[]>> split = splitCIDs(ops, ctxs);
+                    
         try {
-                        
-            LinkedList<byte[]> transList = new LinkedList<>();
-            LinkedList<MessageContext> ctxList = new LinkedList<>(); 
             
-            for (int i = 0; i < operations.length ; i++) {
+            Integer[] cids = new Integer[split.keySet().size()];
+        
+            split.keySet().toArray(cids);
+
+            Arrays.sort(cids);
+
+            int count = 0;
+
+            for (Integer i : cids) {
+
+                count += split.get(i).getKey().length;
+            }
+
+            logger.info("Batch contains {} decisions with a total of {} txs", cids.length, count);
+            
+            for (Integer cid : cids) {
                 
-                if (controller.isCurrentViewMember(msgCtxs[i].getSender())) {
-                                        
-                    ByteBuffer buff = ByteBuffer.wrap(operations[i]);
-                    
-                    int l = buff.getInt();
-                    byte[] b = new byte[l];
-                    buff.get(b);
-                    
-                    if ((new String(b)).equals("TIMEOUT")) {
-                        
-                        int n = buff.getInt();
-                        
-                        if (n == nextNumber) {
-                            
-                            logger.info("Got timeout for current block from replica {}!", msgCtxs[i].getSender());
-                            
-                            Set<Integer> t = timeouts.get(nextNumber);
-                            if (t == null) {
-                                
-                                t = new HashSet<>();
-                                timeouts.put(nextNumber, t);
-                                
-                            }
-                            
-                            t.add(msgCtxs[i].getSender());
-                            
-                            if (t.size() >= (controller.getCurrentViewF() + 1)) {
-                                
-                                timeout = true;
+                byte[][] operations = split.get(cid).getKey();
+                MessageContext[] msgCtxs = split.get(cid).getValue();
+                
+                LinkedList<byte[]> transList = new LinkedList<>();
+                LinkedList<MessageContext> ctxList = new LinkedList<>(); 
+            
+                for (int i = 0; i < operations.length ; i++) {
+
+                    if (controller.isCurrentViewMember(msgCtxs[i].getSender())) {
+
+                        ByteBuffer buff = ByteBuffer.wrap(operations[i]);
+
+                        int l = buff.getInt();
+                        byte[] b = new byte[l];
+                        buff.get(b);
+
+                        if ((new String(b)).equals("TIMEOUT")) {
+
+                            int n = buff.getInt();
+
+                            if (n == nextNumber) {
+
+                                logger.info("Got timeout for current block from replica {}!", msgCtxs[i].getSender());
+
+                                Set<Integer> t = timeouts.get(nextNumber);
+                                if (t == null) {
+
+                                    t = new HashSet<>();
+                                    timeouts.put(nextNumber, t);
+
+                                }
+
+                                t.add(msgCtxs[i].getSender());
+
+                                if (t.size() >= (controller.getCurrentViewF() + 1)) {
+
+                                    timeout = true;
+                                }
                             }
                         }
+
+                    } else if (!noop) {
+
+                        transList.add(operations[i]);
+                        ctxList.add(msgCtxs[i]);
                     }
-                    
-                } else if (!noop) {
-                    
-                    transList.add(operations[i]);
-                    ctxList.add(msgCtxs[i]);
+
                 }
-                
-            }
-                        
-            if (transList.size() > 0) {
-                
-                byte[][] transApp = new byte[transList.size()][];
-                MessageContext[] ctxApp = new MessageContext[ctxList.size()];
-                
-                transList.toArray(transApp);
-                ctxList.toArray(ctxApp);
-                
-                log.storeTransactions(cid, transApp, ctxApp);
 
-                byte[][] resultsApp = executeBatch(transApp, ctxApp);
-                //replies = new TOMMessage[results.length];
-                
-                //TODO: this should be logged in another way, because the number transactions logged may not match the
-                // number of results, because of the timeouts (that still need to be added to the block). This can render
-                //audition impossible. Must implemented a way to match the results to their respective transactions.
-                log.storeResults(resultsApp);
-                
-                for (int i = 0; i < resultsApp.length; i++) {
-                    
-                    TOMMessage reply = getTOMMessage(processID,viewID,transApp[i], ctxApp[i], resultsApp[i]);
-                    
-                    this.results.add(reply);
-                }
-                
-                if (timer != null) timer.cancel();
-                timer = new Timer();
+                if (transList.size() > 0) {
 
-                timer.schedule(new TimerTask() {
+                    byte[][] transApp = new byte[transList.size()][];
+                    MessageContext[] ctxApp = new MessageContext[ctxList.size()];
 
-                    @Override
-                    public void run() {
+                    transList.toArray(transApp);
+                    ctxList.toArray(ctxApp);
 
-                        logger.info("Timeout for block {}, asking to close it", nextNumber);
+                    byte[][] resultsApp = executeBatch(transApp, ctxApp);
+                    //replies = new TOMMessage[results.length];
 
-                        ByteBuffer buff = ByteBuffer.allocate("TIMEOUT".getBytes().length + (Integer.BYTES * 2));
-                        buff.putInt("TIMEOUT".getBytes().length);
-                        buff.put("TIMEOUT".getBytes());
-                        buff.putInt(nextNumber);
+                    //TODO: this should be logged in another way, because the number transactions logged may not match the
+                    // number of results, because of the timeouts (that still need to be added to the block). This can render
+                    //audition impossible. Must implemented a way to match the results to their respective transactions.
+                    log.storeResults(resultsApp);
 
-                        sendTimeout(buff.array());
+                    for (int i = 0; i < resultsApp.length; i++) {
+
+                        TOMMessage reply = getTOMMessage(processID,viewID,transApp[i], ctxApp[i], resultsApp[i]);
+
+                        this.results.add(reply);
                     }
+
+                    if (timer != null) timer.cancel();
+                    timer = new Timer();
+
+                    timer.schedule(new TimerTask() {
+
+                        @Override
+                        public void run() {
+
+                            logger.info("Timeout for block {}, asking to close it", nextNumber);
+
+                            ByteBuffer buff = ByteBuffer.allocate("TIMEOUT".getBytes().length + (Integer.BYTES * 2));
+                            buff.putInt("TIMEOUT".getBytes().length);
+                            buff.put("TIMEOUT".getBytes());
+                            buff.putInt(nextNumber);
+
+                            sendTimeout(buff.array());
+                        }
+
+                    }, config.getLogBatchTimeout());
+                }
+
+                log.storeTransactions(cid, operations, msgCtxs);
+                
+                boolean isCheckpoint = cid > 0 && cid % config.getCheckpointPeriod() == 0;
+
+                if (timeout | isCheckpoint ||  /*(cid % config.getLogBatchLimit() == 0)*/
+                        (this.results.size() > config.getMaxBatchSize()) /* * config.getLogBatchLimit())*/) {
+
+                    byte[][] hashes = log.markEndTransactions();
+
+                    log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
+
+                    lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
+                    nextNumber++;
+
+                    TOMMessage[] reps = new TOMMessage[this.results.size()];
+
+                    this.results.toArray(reps);
+                    this.results.clear();
+
+                    replies = TOMUtil.concat(replies, reps);
                     
-                }, config.getLogBatchTimeout());
+                    if (isCheckpoint) log.clearCached();
+
+                    logger.info("Executing COMMIT phase at CID {} for block number {}", cid, (nextNumber - 1));
+
+                    byte[] mySig = TOMUtil.signMessage(config.getPrivateKey(), lastBlockHash);
+
+                    ByteBuffer buff = ByteBuffer.allocate((Integer.BYTES * 2) + mySig.length);
+
+                    buff.putInt(cid);
+                    buff.putInt(mySig.length);
+                    buff.put(mySig);
+
+                    //int context = proxy.invokeAsynchRequest(buff.array(), null, TOMMessageType.UNORDERED_REQUEST);
+                    //proxy.cleanAsynchRequest(context);
+                    sendCommit(buff.array());
+
+                    mapLock.lock();
+
+                    certificates.remove(currentCommit);
+
+                    currentCommit = cid;
+
+                    Map<Integer,byte[]> signatures = certificates.get(cid);
+                    if (signatures == null) {
+
+                        signatures = new HashMap<>();
+                        certificates.put(cid, signatures);
+                    }
+
+                    //TODO: there is a bug that makes the layer freeze in this part. This needsto be figured out.
+                    if (!(signatures.size() > controller.getQuorum())) {
+
+                        logger.debug("blocking main thread");
+                        gotCertificate.await(2000, TimeUnit.MILLISECONDS);
+                        //gotCertificate.await();
+
+                        //signatures = certificates.get(cid);
+                    }
+
+                    signatures = certificates.get(cid);
+
+                    Map<Integer,byte[]> copy = new HashMap<>();
+
+                    signatures.forEach((id,sig) -> {
+
+                        copy.put(id, sig);
+                    });
+
+                    mapLock.unlock();
+
+                    log.storeCertificate(copy);
+
+                    long ts = System.currentTimeMillis();
+                    if (config.isToWriteSyncLog()) {
+
+                        logger.info("Synching log at CID {} and Block {}", cid, (nextNumber - 1));
+                        log.sync();
+                        logger.info("Synched log at CID {} and Block {} (elapsed time was {} ms)", cid, (nextNumber - 1), (System.currentTimeMillis() - ts));
+
+                    }
+
+                    timeouts.remove(nextNumber-1);
+
+                }
             }
             
-            boolean isCheckpoint = cid > 0 && cid % config.getCheckpointPeriod() == 0;
-            
-            if (timeout || isCheckpoint || (cid % config.getLogBatchLimit() == 0)
-                    /*(this.results.size() > config.getMaxBatchSize() * config.getLogBatchLimit())*/) {
-                
-                byte[][] hashes = log.markEndTransactions();
-                
-                log.storeHeader(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
-                
-                lastBlockHash = computeBlockHash(nextNumber, lastCheckpoint, lastReconfig, hashes[0], hashes[1], lastBlockHash);
-                nextNumber++;
-                                
-                replies = new TOMMessage[this.results.size()];
-                
-                this.results.toArray(replies);
-                this.results.clear();
-                
-                if (isCheckpoint) log.clearCached();
-                
-                logger.info("Executing COMMIT phase at CID {} for block number {}", cid, (nextNumber - 1));
-                
-                byte[] mySig = TOMUtil.signMessage(config.getPrivateKey(), lastBlockHash);
-                
-                ByteBuffer buff = ByteBuffer.allocate((Integer.BYTES * 2) + mySig.length);
-                
-                buff.putInt(cid);
-                buff.putInt(mySig.length);
-                buff.put(mySig);
-                
-                //int context = proxy.invokeAsynchRequest(buff.array(), null, TOMMessageType.UNORDERED_REQUEST);
-                //proxy.cleanAsynchRequest(context);
-                sendCommit(buff.array());
-                
-                mapLock.lock();
-                
-                certificates.remove(currentCommit);
-
-                currentCommit = cid;
-                
-                Map<Integer,byte[]> signatures = certificates.get(cid);
-                if (signatures == null) {
-                    
-                    signatures = new HashMap<>();
-                    certificates.put(cid, signatures);
-                }
-                
-                while (!(signatures.size() > controller.getQuorum())) {
-                    
-                    logger.debug("blocking main thread");
-                    gotCertificate.await(200, TimeUnit.MILLISECONDS);
-                    //gotCertificate.await();
-                    
-                    //signatures = certificates.get(cid);
-                }
-                
-                signatures = certificates.get(cid);
-                
-                Map<Integer,byte[]> copy = new HashMap<>();
-                
-                signatures.forEach((id,sig) -> {
-                    
-                    copy.put(id, sig);
-                });
-                                
-                mapLock.unlock();
-                
-                log.storeCertificate(copy);
-                                                
-                long ts = System.currentTimeMillis();
-                if (config.isToWriteSyncLog()) {
-                    
-                    logger.info("Synching log at CID {} and Block {}", cid, (nextNumber - 1));
-                    log.sync();
-                    logger.info("Synched log at CID {} and Block {} (elapsed time was {} ms)", cid, (nextNumber - 1), (System.currentTimeMillis() - ts));
-
-                }
-                
-                timeouts.remove(nextNumber-1);
-                
-                if (timer != null) timer.cancel();
+            if (timer != null && this.results.isEmpty()) {
+                timer.cancel();
+                timer = null;
             }
+            
+            logger.info("Returning {} replies", replies.length);
             
             return replies;
         } catch (IOException | NoSuchAlgorithmException | InterruptedException ex) {
-            logger.error("Error while logging/executing batch for CID " + cid, ex);
+            logger.error("Error while logging/executing batches", ex);
             return new TOMMessage[0];
         } finally {
             if (mapLock.isHeldByCurrentThread()) mapLock.unlock();
         }
+    }
+    
+    private Map<Integer, Map.Entry<byte[][], MessageContext[]>> splitCIDs(byte[][] operations, MessageContext[] msgCtxs) {
+        
+        Map<Integer, List<Map.Entry<byte[], MessageContext>>> map = new HashMap<>();
+        for (int i = 0; i < operations.length; i++) {
+            
+            List<Map.Entry<byte[], MessageContext>> list = map.get(msgCtxs[i].getConsensusId());
+            if (list == null) {
+                
+                list = new LinkedList<>();
+                map.put(msgCtxs[i].getConsensusId(), list);
+            }
+                            
+            Map.Entry<byte[], MessageContext> entry = new HashMap.SimpleEntry<>(operations[i], msgCtxs[i]);
+            list.add(entry);
+            
+        }        
+        
+        Map<Integer, Map.Entry<byte[][], MessageContext[]>> result = new HashMap<>();
+        
+        for (Integer cid : map.keySet()) {
+        
+            List<Map.Entry<byte[], MessageContext>> value = map.get(cid);
+            
+            byte[][] trans = new byte[value.size()][];
+            MessageContext[] ctxs = new MessageContext[value.size()];
+            
+            for (int i = 0; i < value.size(); i++) {
+                
+                trans[i] = value.get(i).getKey();
+                ctxs[i] = value.get(i).getValue();
+            }
+        
+            result.put(cid, new HashMap.SimpleEntry<>(trans, ctxs));
+        }
+        
+        return result;
     }
     
     private void sendCommit(byte[] payload) throws IOException {

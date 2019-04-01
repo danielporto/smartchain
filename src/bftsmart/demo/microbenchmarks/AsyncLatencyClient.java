@@ -25,6 +25,7 @@ import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
+import java.io.FileWriter;
 import java.nio.ByteBuffer;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
@@ -42,6 +43,7 @@ import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  *
@@ -51,6 +53,8 @@ import java.util.concurrent.Future;
 public class AsyncLatencyClient {
 
     static int initId;
+    static LinkedBlockingQueue<String> latencies;
+    static Thread writerThread;
     
     public static void main(String[] args) throws IOException {
         if (args.length < 8) {
@@ -59,6 +63,32 @@ public class AsyncLatencyClient {
         }
 
         initId = Integer.parseInt(args[0]);
+        latencies = new LinkedBlockingQueue<>();
+        writerThread = new Thread() {
+            
+            public void run() {
+                
+                FileWriter f = null;
+                try {
+                    f = new FileWriter("./latencies_" + initId + ".txt");
+                    while (true) {
+                        
+                        f.write(latencies.take());
+                    }   
+                    
+                } catch (IOException | InterruptedException ex) {
+                    ex.printStackTrace();
+                } finally {
+                    try {
+                        f.close();
+                    } catch (IOException ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            }
+        };
+        writerThread.start();
+        
         int numThreads = Integer.parseInt(args[1]);
         int numberOfOps = Integer.parseInt(args[2]);
         int requestSize = Integer.parseInt(args[3]);
@@ -215,8 +245,14 @@ public class AsyncLatencyClient {
                             double q = Math.ceil((double) (serviceProxy.getViewManager().getCurrentViewN() + serviceProxy.getViewManager().getCurrentViewF() + 1) / 2.0);
 
                             if (replies >= q) {
+                                long latency = System.nanoTime() - last_send_instant;
                                 if (verbose) System.out.println("[RequestContext] clean request context id: " + context.getReqId());
                                 serviceProxy.cleanAsynchRequest(context.getOperationId());
+                                try {
+                                    latencies.put(id + "\t" + System.currentTimeMillis() + "\t" + latency + "\n");
+                                } catch (InterruptedException ex) {
+                                    ex.printStackTrace();
+                                }
                             }
                         }
                     }, this.reqType);
