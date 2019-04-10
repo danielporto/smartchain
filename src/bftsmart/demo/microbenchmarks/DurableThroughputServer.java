@@ -17,36 +17,32 @@ package bftsmart.demo.microbenchmarks;
 
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ServiceReplica;
-import bftsmart.tom.server.defaultservices.CommandsInfo;
-import bftsmart.tom.server.defaultservices.DefaultRecoverable;
+import bftsmart.tom.server.durability.DurabilityCoordinator;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.ObjectOutputStream;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.security.InvalidKeyException;
+import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.PublicKey;
 import java.security.Security;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
+import java.security.spec.EncodedKeySpec;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Simple server that just acknowledge the reception of a request.
  */
-public final class ThroughputLatencyServer extends DefaultRecoverable{
-    
+
+public final class DurableThroughputServer extends DurabilityCoordinator {    
     private int interval;
     private byte[] reply;
     private float maxTp = -1;
@@ -70,11 +66,8 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
     private Storage batchSize = null;
     
     private ServiceReplica replica;
-    
-    private RandomAccessFile randomAccessFile = null;
-    private FileChannel channel = null;
 
-    public ThroughputLatencyServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint,  int signed, int write) {
+    public DurableThroughputServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint,  int signed) {
 
         this.interval = interval;
         this.context = context;
@@ -101,31 +94,10 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
         
         batchSize = new Storage(interval);
         
-        if (write > 0) {
-            
-            try {
-                final File f = File.createTempFile("bft-"+id+"-", Long.toString(System.nanoTime()));
-                randomAccessFile = new RandomAccessFile(f, (write > 1 ? "rwd" : "rw"));
-                channel = randomAccessFile.getChannel();
-                
-                Runtime.getRuntime().addShutdownHook(new Thread() {
-                    
-                    @Override
-                    public void run() {
-                        
-                        f.delete();
-                    }
-                });
-            } catch (IOException ex) {
-                ex.printStackTrace();
-                System.exit(0);
-            }
-        }
         replica = new ServiceReplica(id, this, this);
     }
     
-    @Override
-    public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs, boolean fromConsensus) {
+    public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs) {
         
         batchSize.store(commands.length);
                 
@@ -135,37 +107,6 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
             
             replies[i] = execute(commands[i],msgCtxs[i]);
             
-        }
-        
-        if (randomAccessFile != null) {
-                
-            ObjectOutputStream oos = null;
-            try {
-                CommandsInfo cmd = new CommandsInfo(commands,msgCtxs);
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                oos = new ObjectOutputStream(bos);
-                oos.writeObject(cmd);
-                oos.flush();
-                byte[] bytes = bos.toByteArray();
-                oos.close();
-                bos.close();
-                
-                ByteBuffer bb = ByteBuffer.allocate(bytes.length);
-                bb.put(bytes);
-                bb.flip();
-                
-                channel.write(bb);
-                channel.force(false);
-            } catch (IOException ex) {
-                Logger.getLogger(ThroughputLatencyServer.class.getName()).log(Level.SEVERE, null, ex);
-                
-            } finally {
-                try {
-                    oos.close();
-                } catch (IOException ex) {
-                    Logger.getLogger(ThroughputLatencyServer.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
         }
                     
         return replies;
@@ -202,10 +143,16 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
                     Base64.Decoder b64 = Base64.getDecoder();
                     CertificateFactory kf = CertificateFactory.getInstance("X.509");
                 
-                    byte[] cert = b64.decode(ThroughputLatencyClient.pubKey);
-                    InputStream certstream = new ByteArrayInputStream (cert);
-                
-                    eng.initVerify(kf.generateCertificate(certstream));
+                    //byte[] cert = b64.decode(ThroughputLatencyClient.pubKey);
+                    //InputStream certstream = new ByteArrayInputStream (cert);
+
+                    KeyFactory keyFactory = KeyFactory.getInstance("EC");
+
+                    EncodedKeySpec publicKeySpec = new X509EncodedKeySpec(org.apache.commons.codec.binary.Base64.decodeBase64(ThroughputLatencyClient.pubKey));
+                    PublicKey publicKey = keyFactory.generatePublic(publicKeySpec);
+
+                    //eng.initVerify(kf.generateCertificate(certstream));
+                    eng.initVerify(publicKey);
                     
                 }
                 eng.update(request);
@@ -216,10 +163,7 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
                 }
             }
             
-        } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException | CertificateException ex) {
-            ex.printStackTrace();
-            System.exit(0);
-        } catch (NoSuchProviderException ex) {
+        } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException | CertificateException | NoSuchProviderException | InvalidKeySpecException ex) {
             ex.printStackTrace();
             System.exit(0);
         }
@@ -325,8 +269,8 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
     }
 
     public static void main(String[] args){
-        if(args.length < 7) {
-            System.out.println("Usage: ... ThroughputLatencyServer <processId> <measurement interval> <reply size> <state size> <context?> <pretty print?>  <nosig | default | ecdsa> [rwd | rw]");
+        if(args.length < 6) {
+            System.out.println("Usage: ... ThroughputLatencyServer <processId> <measurement interval> <reply size> <state size> <context?> <pretty print?>  <nosig | default | ecdsa>");
             System.exit(-1);
         }
 
@@ -337,7 +281,6 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
         boolean context = Boolean.parseBoolean(args[4]);
         boolean prettyPrint = Boolean.parseBoolean(args[5]);
         String signed = args[6];
-        String write = args.length > 7 ? args[7] : "";
         
         int s = 0;
         
@@ -349,13 +292,8 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
             System.out.println("Option 'ecdsa' requires SunEC provider to be available.");
             System.exit(0);
         }
-        
-        int w = 0;
-        
-        if (!write.equalsIgnoreCase("")) w++;
-        if (write.equalsIgnoreCase("rwd")) w++;
 
-        new ThroughputLatencyServer(processId,interval,replySize, stateSize, context, prettyPrint, s, w);        
+        new DurableThroughputServer(processId,interval,replySize, stateSize, context, prettyPrint, s);        
     }
 
     @Override
