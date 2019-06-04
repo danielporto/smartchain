@@ -596,10 +596,11 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
                         certificates.put(cid, signatures);
                     }
 
-                    while (!(signatures.size() > controller.getQuorum())) {
+                    //TODO: there is a bug that makes the layer freeze in this part. This needsto be figured out.
+                    if (!(signatures.size() > controller.getQuorum())) {
 
                         logger.info("blocking main thread");
-                        gotCertificate.await(200, TimeUnit.MILLISECONDS);
+                        gotCertificate.await(2000, TimeUnit.MILLISECONDS);
                         //gotCertificate.await();
 
                         //signatures = certificates.get(cid);
