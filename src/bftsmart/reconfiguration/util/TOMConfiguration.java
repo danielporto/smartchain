@@ -43,7 +43,6 @@ public class TOMConfiguration extends Configuration {
     protected boolean shutdownHookEnabled;
     protected boolean useSenderThread;
     private int numNIOThreads;
-    private int useMACs;
     private int useSignatures;
     private boolean stateTransferEnabled;
     private int checkpointPeriod;
@@ -64,7 +63,16 @@ public class TOMConfiguration extends Configuration {
     private int numRepliers;
     private int numNettyWorkers;
     private boolean sameBatchSize;
+    private boolean fairbatch;
     private String bindAddress;
+    private double sigProb;
+    
+    /* Tulio Ribeiro*/
+    //private Boolean ssltls=true;
+    private String ssltlsProtocolVersion;
+    private String keyStoreFile;
+    private String [] enabledCiphers;
+    
     
     /** Creates a new instance of TOMConfiguration */
     public TOMConfiguration(int processId, KeyLoader loader) {
@@ -184,14 +192,6 @@ public class TOMConfiguration extends Configuration {
                 numNIOThreads = Integer.parseInt(s);
             }
 
-            s = (String) configs.remove("system.communication.useMACs");
-            if (s == null) {
-                useMACs = 0;
-            } else {
-                useMACs = Integer.parseInt(s);
-            }
-
-            useSignatures = 1;
             s = (String) configs.remove("system.communication.useSignatures");
             if (s == null) {
                 useSignatures = 0;
@@ -199,6 +199,14 @@ public class TOMConfiguration extends Configuration {
                 useSignatures = Integer.parseInt(s);
             }
 
+            sigProb = 1.00;
+            s = (String) configs.remove("system.communication.sigProb");
+            if (s == null) {
+                sigProb = 1.00;
+            } else {
+                sigProb = Double.parseDouble(s);
+            }
+            
             s = (String) configs.remove("system.totalordermulticast.state_transfer");
             if (s == null) {
                 stateTransferEnabled = false;
@@ -368,14 +376,67 @@ public class TOMConfiguration extends Configuration {
                 bindAddress = s;
             }
             
-            //Force this codebase to always deliver to the application a batch with the same size across all replicas
-            sameBatchSize = true;
-            //s = (String) configs.remove("system.samebatchsize");
-            //if (s != null) {
-            //        sameBatchSize = Boolean.parseBoolean(s);
-            //} else {
-            //        sameBatchSize = false;
-            //}
+            s = (String) configs.remove("system.samebatchsize");
+            if (s != null) {
+                    sameBatchSize = Boolean.parseBoolean(s);
+            } else {
+                    sameBatchSize = false;
+            }
+            
+            s = (String) configs.remove("system.totalordermulticast.fairbatch");
+            if (s != null) {
+                    fairbatch = Boolean.parseBoolean(s);
+            } else {
+                    fairbatch = false;
+            }
+            
+            /**
+             * Tulio Ribeiro 
+             * 
+             * SSL/TLS configuration parameters.
+             * Default values: 
+             *  #	keyStoreFile = "EC_KeyPair_256.pkcs12";
+             *  #	enabledCiphers = new String[] {"TLS_RSA_WITH_NULL_SHA256", "TLS_ECDHE_ECDSA_WITH_NULL_SHA"};
+             *  #	ssltlsProtocolVersion = "TLSv1.2";
+             */
+           
+            
+            s = (String) configs.remove("system.ssltls.key_store_file");
+            if(s == null){
+                keyStoreFile = "EC_KeyPair_256.pkcs12";                        
+            }else{
+            	keyStoreFile = s;
+			}
+            
+            s = (String) configs.remove("system.ssltls.enabled_ciphers");
+            if(s == null){
+                enabledCiphers = new String[] {"TLS_RSA_WITH_NULL_SHA256", "TLS_ECDHE_ECDSA_WITH_NULL_SHA"};
+            }else{
+            	enabledCiphers = s.split(",");
+			}        
+            
+			s = (String) configs.remove("system.ssltls.protocol_version");
+			if (s == null) {
+				ssltlsProtocolVersion = "TLSv1.2";				
+			} else {
+				switch (s) {
+				case "SSLv3":
+					ssltlsProtocolVersion = "SSLv3";
+					break;
+				case "TLSv1":
+					ssltlsProtocolVersion = "TLSv1";
+					break;
+				case "TLSv1.1":
+					ssltlsProtocolVersion = "TLSv1.1";
+					break;
+				case "TLSv1.2":
+					ssltlsProtocolVersion = "TLSv1.2";
+					break;
+				default:
+					ssltlsProtocolVersion = "TLSv1.2";
+					break;
+				}
+			}
             
         } catch (Exception e) {
             logger.error("Could not parse system configuration file",e);
@@ -480,13 +541,10 @@ public class TOMConfiguration extends Configuration {
         return useSignatures;
     }
 
-    /**
-     * Indicates if MACs should be used (1) or not (0) to authenticate client-server and server-server messages
-     */
-    public int getUseMACs() {
-        return useMACs;
+    public double getSigProb() {
+        return sigProb;
     }
-
+    
     /**
      * Indicates the checkpoint period used when fetching the state from the application
      */
@@ -558,6 +616,10 @@ public class TOMConfiguration extends Configuration {
         return sameBatchSize;
     }
     
+    public boolean getFairBatch() {
+        return fairbatch;
+    }
+    
     public String getBindAddress() {
         return bindAddress;
     }
@@ -567,4 +629,19 @@ public class TOMConfiguration extends Configuration {
         return logBatchType;
     }
 
+    /**
+     * Tulio Ribeiro ## SSL/TLS getters.
+     * */
+    public String getSSLTLSProtocolVersion() {
+		return ssltlsProtocolVersion;
+	}
+	
+	public String getSSLTLSKeyStore() {
+		return keyStoreFile; 
+	}
+	
+	public String[] getEnabledCiphers() {
+		return enabledCiphers;
+	}
+    
 }

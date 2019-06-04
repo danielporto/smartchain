@@ -1058,7 +1058,7 @@ public class Synchronizer {
             e.addToProof(cm);
             
             if (cm.getType() == MessageFactory.ACCEPT) {
-                e.setAccept(cm.getSender(), cm.getValue(), cm.getCheckpointHash());
+                e.setAccept(cm.getSender(), cm.getValue());
             }
             
             else if (cm.getType() == MessageFactory.WRITE) {
@@ -1178,7 +1178,7 @@ public class Synchronizer {
             if (this.controller.getStaticConf().isBFT()) {
                 e.setWrite(me, hash);
             } else {
-                e.setAccept(me, hash, null);
+                e.setAccept(me, hash);
 
                 /********* LEADER CHANGE CODE ********/
                 logger.debug("[CFT Mode] Setting consensus " + currentCID + " QuorumWrite tiemstamp to " + e.getConsensus().getEts() + " and value " + Arrays.toString(hash));

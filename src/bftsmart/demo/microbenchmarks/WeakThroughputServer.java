@@ -21,24 +21,30 @@ import bftsmart.tom.server.defaultservices.CommandsInfo;
 import bftsmart.tom.server.defaultservices.blockchain.WeakBlockchainRecoverable;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.security.InvalidKeyException;
+import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.PublicKey;
 import java.security.Security;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
+import java.security.spec.EncodedKeySpec;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -51,6 +57,7 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
     private byte[] reply;
     private float maxTp = -1;
     private boolean context;
+    private boolean prettyPrint;
     private int signed;
     
     private byte[] state;
@@ -72,11 +79,14 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
     
     private RandomAccessFile randomAccessFile = null;
     private FileChannel channel = null;
+    
+    private ExecutorService verifierExecutor = null;
 
-    public WeakThroughputServer(int id, int interval, int replySize, int stateSize, boolean context,  int signed, int write) {
+    public WeakThroughputServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint, int signed, int write) {
 
         this.interval = interval;
         this.context = context;
+        this.prettyPrint = prettyPrint;
         this.signed = signed;
         
         this.reply = new byte[replySize];
@@ -119,11 +129,14 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
                 System.exit(0);
             }
         }
+
+        this.verifierExecutor = Executors.newWorkStealingPool(2*Runtime.getRuntime().availableProcessors());
+        
         replica = new ServiceReplica(id, this, this);
     }
     
     @Override
-    public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs, boolean iCheckpoint) {
+    public byte[][] appExecuteBatch(byte[][] commands, MessageContext[] msgCtxs, boolean fromConsensus) {
         
         batchSize.store(commands.length);
                 
@@ -165,7 +178,73 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
                 }
             }
         }
-        
+            
+        if (signed > 0) {
+
+            final CountDownLatch latch = new CountDownLatch(commands.length);
+
+            for (byte[] command : commands) {
+
+                ByteBuffer buffer = ByteBuffer.wrap(command);
+                int l = buffer.getInt();
+                final byte[] request = new byte[l];
+                buffer.get(request);
+                l = buffer.getInt();
+                final byte[] signature = new byte[l];
+
+                buffer.get(signature);
+
+                verifierExecutor.submit(() -> {
+
+                    Signature eng;
+
+                    try {
+
+                        if (signed == 1) {
+
+                            eng = TOMUtil.getSigEngine();
+                            eng.initVerify(replica.getReplicaContext().getStaticConfiguration().getPublicKey());
+                        } else {
+
+                            eng = Signature.getInstance("SHA256withECDSA", "BC");
+                            Base64.Decoder b64 = Base64.getDecoder();
+                            CertificateFactory kf = CertificateFactory.getInstance("X.509");
+
+                            //byte[] cert = b64.decode(ThroughputLatencyClient.pubKey);
+                            //InputStream certstream = new ByteArrayInputStream (cert);
+
+                            KeyFactory keyFactory = KeyFactory.getInstance("EC");
+
+                            EncodedKeySpec publicKeySpec = new X509EncodedKeySpec(org.apache.commons.codec.binary.Base64.decodeBase64(ThroughputLatencyClient.pubKey));
+                            PublicKey publicKey = keyFactory.generatePublic(publicKeySpec);
+            
+                            //eng.initVerify(kf.generateCertificate(certstream));
+                            eng.initVerify(publicKey);
+
+                        }
+                        eng.update(request);
+                        if (!eng.verify(signature)) {
+
+                            System.out.println("Client sent invalid signature!");
+                            System.exit(0);
+                        }
+
+                    } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException | CertificateException | NoSuchProviderException | InvalidKeySpecException ex) {
+                        ex.printStackTrace();
+                        System.exit(0);
+                    }
+
+                    latch.countDown();
+                });
+            }
+
+            try {
+                latch.await();
+            } catch (InterruptedException ex) {
+                ex.printStackTrace();
+            }
+        }
+                    
         return replies;
     }
     
@@ -175,52 +254,6 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
     }
     
     public byte[] execute(byte[] command, MessageContext msgCtx) {
-        
-        ByteBuffer buffer = ByteBuffer.wrap(command);
-        int l = buffer.getInt();
-        byte[] request = new byte[l];
-        buffer.get(request);
-        l = buffer.getInt();
-        byte[] signature = new byte[l];
-        
-        buffer.get(signature);
-        Signature eng;
-        
-        try {
-            
-            if (signed > 0) {
-                
-                if (signed == 1) {
-                    
-                    eng = TOMUtil.getSigEngine();
-                    eng.initVerify(replica.getReplicaContext().getStaticConfiguration().getPublicKey());
-                } else {
-                
-                    eng = Signature.getInstance("SHA256withECDSA", "SunEC");
-                    Base64.Decoder b64 = Base64.getDecoder();
-                    CertificateFactory kf = CertificateFactory.getInstance("X.509");
-                
-                    byte[] cert = b64.decode(ThroughputLatencyClient.pubKey);
-                    InputStream certstream = new ByteArrayInputStream (cert);
-                
-                    eng.initVerify(kf.generateCertificate(certstream));
-                    
-                }
-                eng.update(request);
-                if (!eng.verify(signature)) {
-                    
-                    System.out.println("Client sent invalid signature!");
-                    System.exit(0);
-                }
-            }
-            
-        } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException | CertificateException ex) {
-            ex.printStackTrace();
-            System.exit(0);
-        } catch (NoSuchProviderException ex) {
-            ex.printStackTrace();
-            System.exit(0);
-        }
         
         boolean readOnly = false;
         
@@ -276,32 +309,44 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
         if(iterations % interval == 0) {
             if (context) System.out.println("--- (Context)  iterations: "+ iterations + " // regency: " + msgCtx.getRegency() + " // consensus: " + msgCtx.getConsensusId() + " ---");
             
-            System.out.println("--- Measurements after "+ iterations+" ops ("+interval+" samples) ---");
-            
+            System.out.println("--- Measurements after "+ iterations+" ops at timestamp " + System.currentTimeMillis() + " ("+interval+" samples) ---");
+
             tp = (float)(interval*1000/(float)(System.currentTimeMillis()-throughputMeasurementStartTime));
-            
+
             if (tp > maxTp) maxTp = tp;
-            
-            System.out.println("Throughput = " + tp +" operations/sec (Maximum observed: " + maxTp + " ops/sec)");            
-            
-            System.out.println("Total latency = " + totalLatency.getAverage(false) / 1000 + " (+/- "+ (long)totalLatency.getDP(false) / 1000 +") us ");
+
+            if (prettyPrint) {
+
+                System.out.println("Throughput = " + tp +" operations/sec (Maximum observed: " + maxTp + " ops/sec)");            
+                System.out.println("Total latency = " + totalLatency.getAverage(false) / 1000 + " (+/- "+ (long)totalLatency.getDP(false) / 1000 +") us ");
+                System.out.println("Consensus latency = " + consensusLatency.getAverage(false) / 1000 + " (+/- "+ (long)consensusLatency.getDP(false) / 1000 +") us ");
+                System.out.println("Pre-consensus latency = " + preConsLatency.getAverage(false) / 1000 + " (+/- "+ (long)preConsLatency.getDP(false) / 1000 +") us ");
+                System.out.println("Pos-consensus latency = " + posConsLatency.getAverage(false) / 1000 + " (+/- "+ (long)posConsLatency.getDP(false) / 1000 +") us ");
+                System.out.println("Propose latency = " + proposeLatency.getAverage(false) / 1000 + " (+/- "+ (long)proposeLatency.getDP(false) / 1000 +") us ");
+                System.out.println("Write latency = " + writeLatency.getAverage(false) / 1000 + " (+/- "+ (long)writeLatency.getDP(false) / 1000 +") us ");
+                System.out.println("Accept latency = " + acceptLatency.getAverage(false) / 1000 + " (+/- "+ (long)acceptLatency.getDP(false) / 1000 +") us ");
+                System.out.println("Batch average size = " + batchSize.getAverage(false) + " (+/- "+ (long)batchSize.getDP(false) +") requests");
+                
+            } else {
+                
+                System.out.println(System.currentTimeMillis() + "\t" + iterations + "\t" + tp+"\t" + maxTp +
+                        "\t" + totalLatency.getAverage(false) + "\t" + totalLatency.getDP(false)+
+                        "\t" + consensusLatency.getAverage(false) + "\t" + consensusLatency.getDP(false) + 
+                        "\t" + preConsLatency.getAverage(false) + "\t" + preConsLatency.getDP(false) +
+                        "\t" + posConsLatency.getAverage(false) + "\t" + posConsLatency.getDP(false) +
+                        "\t" + proposeLatency.getAverage(false) + "\t" + proposeLatency.getDP(false) +
+                        "\t" + writeLatency.getAverage(false) + "\t" + writeLatency.getDP(false) +
+                        "\t" + acceptLatency.getAverage(false) + "\t" + acceptLatency.getDP(false) +
+                        "\t" + batchSize.getAverage(false) + "\t" + batchSize.getDP(false));
+            }
             totalLatency.reset();
-            System.out.println("Consensus latency = " + consensusLatency.getAverage(false) / 1000 + " (+/- "+ (long)consensusLatency.getDP(false) / 1000 +") us ");
             consensusLatency.reset();
-            System.out.println("Pre-consensus latency = " + preConsLatency.getAverage(false) / 1000 + " (+/- "+ (long)preConsLatency.getDP(false) / 1000 +") us ");
             preConsLatency.reset();
-            System.out.println("Pos-consensus latency = " + posConsLatency.getAverage(false) / 1000 + " (+/- "+ (long)posConsLatency.getDP(false) / 1000 +") us ");
             posConsLatency.reset();
-            System.out.println("Propose latency = " + proposeLatency.getAverage(false) / 1000 + " (+/- "+ (long)proposeLatency.getDP(false) / 1000 +") us ");
             proposeLatency.reset();
-            System.out.println("Write latency = " + writeLatency.getAverage(false) / 1000 + " (+/- "+ (long)writeLatency.getDP(false) / 1000 +") us ");
             writeLatency.reset();
-            System.out.println("Accept latency = " + acceptLatency.getAverage(false) / 1000 + " (+/- "+ (long)acceptLatency.getDP(false) / 1000 +") us ");
             acceptLatency.reset();
-            
-            System.out.println("Batch average size = " + batchSize.getAverage(false) + " (+/- "+ (long)batchSize.getDP(false) +") requests");
             batchSize.reset();
-            
             throughputMeasurementStartTime = System.currentTimeMillis();
         }
 
@@ -309,8 +354,8 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
     }
 
     public static void main(String[] args){
-        if(args.length < 6) {
-            System.out.println("Usage: ... ThroughputLatencyServer <processId> <measurement interval> <reply size> <state size> <context?> <nosig | default | ecdsa> [rwd | rw]");
+        if(args.length < 7) {
+            System.out.println("Usage: ... ThroughputLatencyServer <processId> <measurement interval> <reply size> <state size> <context?> <pretty print?> <nosig | default | ecdsa> [rwd | rw]");
             System.exit(-1);
         }
 
@@ -319,8 +364,9 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
         int replySize = Integer.parseInt(args[2]);
         int stateSize = Integer.parseInt(args[3]);
         boolean context = Boolean.parseBoolean(args[4]);
-        String signed = args[5];
-        String write = args.length > 6 ? args[6] : "";
+        boolean prettyPrint = Boolean.parseBoolean(args[5]);
+        String signed = args[6];
+        String write = args.length > 7 ? args[7] : "";
         
         int s = 0;
         
@@ -338,7 +384,7 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
         if (!write.equalsIgnoreCase("")) w++;
         if (write.equalsIgnoreCase("rwd")) w++;
 
-        new WeakThroughputServer(processId,interval,replySize, stateSize, context, s, w);        
+        new WeakThroughputServer(processId,interval,replySize, stateSize, context, prettyPrint, s, w);        
     }
 
     @Override

@@ -34,9 +34,6 @@ public class ConsensusMessage extends SystemMessage {
     private byte[] value = null; // Value used when message type is PROPOSE
     private Object proof; // Proof used when message type is COLLECT
                               // Can be either a MAC vector or a signature
-    
-    private byte[] checkpointHash = null; // checkpoint of the application state included with ACCEPT messages
-    private byte[] lastBlockHash = null; // last block of the application's ledger included with ACCEPT messages
 
     /**
      * Creates a consensus message. Not used. TODO: How about making it private?
@@ -111,27 +108,6 @@ public class ConsensusMessage extends SystemMessage {
             out.writeBoolean(false);
         }
 
-        if(this.checkpointHash != null) {
-
-            out.writeInt(checkpointHash.length);
-            out.write(checkpointHash);
-
-        }
-        
-        else {
-            out.writeInt(0);
-        }
-        
-        if(this.lastBlockHash != null) {
-
-            out.writeInt(lastBlockHash.length);
-            out.write(lastBlockHash);
-
-        }
-        
-        else {
-            out.writeInt(0);
-        }
     }
 
     // Implemented method of the Externalizable interface
@@ -162,24 +138,6 @@ public class ConsensusMessage extends SystemMessage {
         if (asProof) {
             
             proof = in.readObject();
-        }
-        
-        checkpointHash = null;
-        
-        int checkpointHashSize = in.readInt();
-        if (checkpointHashSize > 0) {
-            
-            checkpointHash = new byte[checkpointHashSize];
-            in.read(checkpointHash);
-        }
-        
-        lastBlockHash = null;
-        
-        int lastBlockHashSize = in.readInt();
-        if (lastBlockHashSize > 0) {
-            
-            lastBlockHash = new byte[lastBlockHashSize];
-            in.read(lastBlockHash);
         }
         
     }
@@ -219,28 +177,6 @@ public class ConsensusMessage extends SystemMessage {
 
     }
 
-    public void setLastBlockHash(byte[] lastBlockHash) {
-        
-        this.lastBlockHash = lastBlockHash;
-    }
-
-    public byte[] getlastBlockHash() {
-
-        return lastBlockHash;
-
-    }
-    
-    public void setCheckpointHash(byte[] checkpointHash) {
-        
-        this.checkpointHash = checkpointHash;
-    }
-
-    public byte[] getCheckpointHash() {
-
-        return checkpointHash;
-
-    }
-    
     /**
      * Returns the consensus ID of this message
      * @return Consensus ID of this message
@@ -283,4 +219,3 @@ public class ConsensusMessage extends SystemMessage {
     }
 
 }
-

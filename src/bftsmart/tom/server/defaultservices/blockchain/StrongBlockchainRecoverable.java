@@ -598,7 +598,7 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
 
                     while (!(signatures.size() > controller.getQuorum())) {
 
-                        logger.debug("blocking main thread");
+                        logger.info("blocking main thread");
                         gotCertificate.await(200, TimeUnit.MILLISECONDS);
                         //gotCertificate.await();
 
@@ -767,8 +767,6 @@ public abstract class StrongBlockchainRecoverable implements Recoverable, BatchE
             ConsensusMessage cm = new ConsensusMessage(consMsg.getType(),consMsg.getNumber(),
                     consMsg.getEpoch(), consMsg.getSender(), consMsg.getValue());
             
-            cm.setCheckpointHash(consMsg.getCheckpointHash());
-
             ByteArrayOutputStream bOut = new ByteArrayOutputStream(248);
             try {
                 new ObjectOutputStream(bOut).writeObject(cm);
