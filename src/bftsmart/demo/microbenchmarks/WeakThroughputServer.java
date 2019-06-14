@@ -15,6 +15,7 @@ limitations under the License.
 */
 package bftsmart.demo.microbenchmarks;
 
+import bftsmart.reconfiguration.util.TOMConfiguration;
 import bftsmart.tom.MessageContext;
 import bftsmart.tom.ServiceReplica;
 import bftsmart.tom.server.defaultservices.CommandsInfo;
@@ -81,6 +82,8 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
     private FileChannel channel = null;
     
     private ExecutorService verifierExecutor = null;
+    
+    private final TOMConfiguration replicaConf;
 
     public WeakThroughputServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint, int signed, int write) {
 
@@ -108,6 +111,8 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
         acceptLatency = new Storage(interval);
         
         batchSize = new Storage(interval);
+        
+        this.replicaConf = new TOMConfiguration(id, "./config/", null);
         
         if (write > 0) {
             
@@ -203,7 +208,7 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
                         if (signed == 1) {
 
                             eng = TOMUtil.getSigEngine();
-                            eng.initVerify(replica.getReplicaContext().getStaticConfiguration().getPublicKey());
+                            eng.initVerify(replicaConf.getPublicKey());
                         } else {
 
                             eng = Signature.getInstance("SHA256withECDSA", "BC");
