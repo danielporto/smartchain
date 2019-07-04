@@ -198,7 +198,21 @@ public abstract class WeakBlockchainRecoverable implements Recoverable, BatchExe
                 
                 writeCheckpointToDisk(lastCheckpoint, appState);
                 
-                stateManager.fetchBlocks(lastCID);
+                // block while fetching blocks
+                //stateManager.fetchBlocks(lastCID);
+                
+                //fetch blocks without blocking
+                final BlockchainStateManager bsm = stateManager;
+                final int lcid = lastCID;
+                
+                Thread t = new Thread() {
+                    
+                    public void run() {
+                        bsm.fetchBlocks(lcid);
+                    }
+                };
+                
+                t.start();
                 
                 if (lastCID % config.getCheckpointPeriod() == 0) {
                     log.startFileFromCache(config.getCheckpointPeriod());
