@@ -45,7 +45,7 @@ import java.util.logging.Logger;
 /**
  * Simple server that just acknowledge the reception of a request.
  */
-public final class ThroughputLatencyServer extends DefaultRecoverable{
+public final class MemoryThroughputServer extends DefaultRecoverable{
     
     private int interval;
     private byte[] reply;
@@ -74,7 +74,7 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
     private RandomAccessFile randomAccessFile = null;
     private FileChannel channel = null;
 
-    public ThroughputLatencyServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint,  int signed, int write) {
+    public MemoryThroughputServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint,  int signed, int write) {
 
         this.interval = interval;
         this.context = context;
@@ -157,13 +157,13 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
                 channel.write(bb);
                 channel.force(false);
             } catch (IOException ex) {
-                Logger.getLogger(ThroughputLatencyServer.class.getName()).log(Level.SEVERE, null, ex);
+                Logger.getLogger(MemoryThroughputServer.class.getName()).log(Level.SEVERE, null, ex);
                 
             } finally {
                 try {
                     oos.close();
                 } catch (IOException ex) {
-                    Logger.getLogger(ThroughputLatencyServer.class.getName()).log(Level.SEVERE, null, ex);
+                    Logger.getLogger(MemoryThroughputServer.class.getName()).log(Level.SEVERE, null, ex);
                 }
             }
         }
@@ -355,7 +355,7 @@ public final class ThroughputLatencyServer extends DefaultRecoverable{
         if (!write.equalsIgnoreCase("")) w++;
         if (write.equalsIgnoreCase("rwd")) w++;
 
-        new ThroughputLatencyServer(processId,interval,replySize, stateSize, context, prettyPrint, s, w);        
+        new MemoryThroughputServer(processId,interval,replySize, stateSize, context, prettyPrint, s, w);        
     }
 
     @Override
