@@ -314,9 +314,9 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
             tp = (float)(interval*1000/(float)(System.currentTimeMillis()-throughputMeasurementStartTime));
 
             if (tp > maxTp) maxTp = tp;
-
+            
             if (prettyPrint) {
-
+                
                 System.out.println("Throughput = " + tp +" operations/sec (Maximum observed: " + maxTp + " ops/sec)");            
                 System.out.println("Total latency = " + totalLatency.getAverage(false) / 1000 + " (+/- "+ (long)totalLatency.getDP(false) / 1000 +") us ");
                 System.out.println("Consensus latency = " + consensusLatency.getAverage(false) / 1000 + " (+/- "+ (long)consensusLatency.getDP(false) / 1000 +") us ");
@@ -326,7 +326,7 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
                 System.out.println("Write latency = " + writeLatency.getAverage(false) / 1000 + " (+/- "+ (long)writeLatency.getDP(false) / 1000 +") us ");
                 System.out.println("Accept latency = " + acceptLatency.getAverage(false) / 1000 + " (+/- "+ (long)acceptLatency.getDP(false) / 1000 +") us ");
                 System.out.println("Batch average size = " + batchSize.getAverage(false) + " (+/- "+ (long)batchSize.getDP(false) +") requests");
-                
+
             } else {
                 
                 System.out.println(System.currentTimeMillis() + "\t" + iterations + "\t" + tp+"\t" + maxTp +
@@ -355,7 +355,7 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
 
     public static void main(String[] args){
         if(args.length < 7) {
-            System.out.println("Usage: ... ThroughputLatencyServer <processId> <measurement interval> <reply size> <state size> <context?> <pretty print?> <nosig | default | ecdsa> [rwd | rw]");
+            System.out.println("Usage: ... WeakThroughputServer <processId> <measurement interval> <reply size> <state size> <context?> <pretty print?> <nosig | default | ecdsa> [rwd | rw]");
             System.exit(-1);
         }
 
@@ -396,6 +396,6 @@ public final class WeakThroughputServer extends WeakBlockchainRecoverable {
     public byte[] getSnapshot() {
         return this.state;
     }
-
    
+    
 }

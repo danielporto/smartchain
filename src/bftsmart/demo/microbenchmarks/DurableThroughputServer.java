@@ -20,8 +20,6 @@ import bftsmart.tom.ServiceReplica;
 import bftsmart.tom.server.durability.DurabilityCoordinator;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
@@ -42,7 +40,7 @@ import java.util.Base64;
  * Simple server that just acknowledge the reception of a request.
  */
 
-public final class DurableThroughputServer extends DurabilityCoordinator {    
+public final class DurableThroughputServer extends DurabilityCoordinator {
     private int interval;
     private byte[] reply;
     private float maxTp = -1;
@@ -67,7 +65,7 @@ public final class DurableThroughputServer extends DurabilityCoordinator {
     
     private ServiceReplica replica;
 
-    public DurableThroughputServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint,  int signed) {
+    public DurableThroughputServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint, int signed) {
 
         this.interval = interval;
         this.context = context;
@@ -108,7 +106,7 @@ public final class DurableThroughputServer extends DurabilityCoordinator {
             replies[i] = execute(commands[i],msgCtxs[i]);
             
         }
-                    
+                
         return replies;
     }
     

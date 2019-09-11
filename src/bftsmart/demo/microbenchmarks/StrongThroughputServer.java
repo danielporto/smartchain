@@ -21,11 +21,9 @@ import bftsmart.tom.server.defaultservices.blockchain.StrongBlockchainRecoverabl
 import bftsmart.tom.server.defaultservices.CommandsInfo;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -337,7 +335,7 @@ public final class StrongThroughputServer extends StrongBlockchainRecoverable {
 
     public static void main(String[] args){
         if(args.length < 7) {
-            System.out.println("Usage: ... ThroughputLatencyServer <processId> <measurement interval> <reply size> <state size> <context?> <pretty print?>  <nosig | default | ecdsa> [rwd | rw]");
+            System.out.println("Usage: ... StrongThroughputServer <processId> <measurement interval> <reply size> <state size> <context?> <pretty print?>  <nosig | default | ecdsa> [rwd | rw]");
             System.exit(-1);
         }
 
