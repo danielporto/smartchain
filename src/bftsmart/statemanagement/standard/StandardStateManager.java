@@ -238,7 +238,7 @@ public class StandardStateManager extends StateManager {
                                 e.addToProof(cm);
 
                                 if (cm.getType() == MessageFactory.ACCEPT) {
-                                    e.setAccept(cm.getSender(), cm.getValue());
+                                    e.setAccept(cm.getSender(), cm.getValue(), cm.getCheckpointHash());
                                 }
 
                                 else if (cm.getType() == MessageFactory.WRITE) {

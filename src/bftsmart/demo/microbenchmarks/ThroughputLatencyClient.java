@@ -125,7 +125,7 @@ public class ThroughputLatencyClient {
         
         for(int i=0; i<numThreads; i++) {
             try {
-                Thread.sleep(10);
+                Thread.sleep(100);
             } catch (InterruptedException ex) {
                 
                 ex.printStackTrace();

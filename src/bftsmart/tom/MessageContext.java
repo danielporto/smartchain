@@ -260,6 +260,16 @@ public class MessageContext implements Serializable {
     }
     
     /**
+     * Returns the checkpoint hash taken after the previous execution, or null if not checkpoint was taken.
+     * @return The checkpoint hash taken after the previous execution, or null if not checkpoint was taken.
+     */
+    public byte[] getCheckpointHash() {
+        
+        ConsensusMessage[] array = new ConsensusMessage[proof.size()];
+        return proof.toArray(array)[0].getCheckpointHash();
+    }
+    
+    /**
      * @deprecated 
      */
     public void setLastInBatch() {

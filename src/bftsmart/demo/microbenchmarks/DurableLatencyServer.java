@@ -45,7 +45,7 @@ import java.util.logging.Logger;
 /**
  * Simple server that just acknowledge the reception of a request.
  */
-public final class DurableLatencyServer extends DefaultRecoverable{
+public final class ThroughputLatencyServer extends DefaultRecoverable{
     
     private int interval;
     private byte[] reply;
@@ -74,7 +74,7 @@ public final class DurableLatencyServer extends DefaultRecoverable{
     private RandomAccessFile randomAccessFile = null;
     private FileChannel channel = null;
 
-    public DurableLatencyServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint,  int signed, int write) {
+    public ThroughputLatencyServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint,  int signed, int write) {
 
         this.interval = interval;
         this.context = context;
