@@ -330,7 +330,7 @@ public class NettyClientServerCommunicationSystemServerSide extends SimpleChanne
                                                     rl.readLock().lock();
                                                     
                                                     try {
-                                                        Thread.sleep(1000);
+                                                        Thread.sleep(100);
                                                     } catch (InterruptedException ex) {
                                                         logger.error("Interruption while sleeping", ex);
                                                     }
