@@ -31,18 +31,13 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.security.InvalidKeyException;
-import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
-import java.security.PublicKey;
 import java.security.Security;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
-import java.security.spec.EncodedKeySpec;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -50,7 +45,7 @@ import java.util.logging.Logger;
 /**
  * Simple server that just acknowledge the reception of a request.
  */
-public final class MemoryThroughputServer extends DefaultRecoverable{
+public final class ThroughputLatencyServer extends DefaultRecoverable{
     
     private int interval;
     private byte[] reply;
@@ -79,7 +74,7 @@ public final class MemoryThroughputServer extends DefaultRecoverable{
     private RandomAccessFile randomAccessFile = null;
     private FileChannel channel = null;
 
-    public MemoryThroughputServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint,  int signed, int write) {
+    public ThroughputLatencyServer(int id, int interval, int replySize, int stateSize, boolean context, boolean prettyPrint,  int signed, int write) {
 
         this.interval = interval;
         this.context = context;
@@ -162,13 +157,13 @@ public final class MemoryThroughputServer extends DefaultRecoverable{
                 channel.write(bb);
                 channel.force(false);
             } catch (IOException ex) {
-                Logger.getLogger(MemoryThroughputServer.class.getName()).log(Level.SEVERE, null, ex);
+                Logger.getLogger(ThroughputLatencyServer.class.getName()).log(Level.SEVERE, null, ex);
                 
             } finally {
                 try {
                     oos.close();
                 } catch (IOException ex) {
-                    Logger.getLogger(MemoryThroughputServer.class.getName()).log(Level.SEVERE, null, ex);
+                    Logger.getLogger(ThroughputLatencyServer.class.getName()).log(Level.SEVERE, null, ex);
                 }
             }
         }
@@ -207,16 +202,10 @@ public final class MemoryThroughputServer extends DefaultRecoverable{
                     Base64.Decoder b64 = Base64.getDecoder();
                     CertificateFactory kf = CertificateFactory.getInstance("X.509");
                 
-                    //byte[] cert = b64.decode(ThroughputLatencyClient.pubKey);
-                    //InputStream certstream = new ByteArrayInputStream (cert);
-
-                    KeyFactory keyFactory = KeyFactory.getInstance("EC");
-
-                    EncodedKeySpec publicKeySpec = new X509EncodedKeySpec(org.apache.commons.codec.binary.Base64.decodeBase64(ThroughputLatencyClient.pubKey));
-                    PublicKey publicKey = keyFactory.generatePublic(publicKeySpec);
-
-                    //eng.initVerify(kf.generateCertificate(certstream));
-                    eng.initVerify(publicKey);
+                    byte[] cert = b64.decode(ThroughputLatencyClient.pubKey);
+                    InputStream certstream = new ByteArrayInputStream (cert);
+                
+                    eng.initVerify(kf.generateCertificate(certstream));
                     
                 }
                 eng.update(request);
@@ -227,7 +216,7 @@ public final class MemoryThroughputServer extends DefaultRecoverable{
                 }
             }
             
-        } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException | CertificateException | InvalidKeySpecException ex) {
+        } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException | CertificateException ex) {
             ex.printStackTrace();
             System.exit(0);
         } catch (NoSuchProviderException ex) {
@@ -366,7 +355,7 @@ public final class MemoryThroughputServer extends DefaultRecoverable{
         if (!write.equalsIgnoreCase("")) w++;
         if (write.equalsIgnoreCase("rwd")) w++;
 
-        new MemoryThroughputServer(processId,interval,replySize, stateSize, context, prettyPrint, s, w);        
+        new ThroughputLatencyServer(processId,interval,replySize, stateSize, context, prettyPrint, s, w);        
     }
 
     @Override

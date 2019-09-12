@@ -25,17 +25,14 @@ import bftsmart.tom.core.messages.TOMMessage;
 import bftsmart.tom.core.messages.TOMMessageType;
 import bftsmart.tom.util.Storage;
 import bftsmart.tom.util.TOMUtil;
-import static bftsmart.demo.microbenchmarks.ThroughputLatencyClient.privKey;
 import java.nio.ByteBuffer;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
-import java.security.PrivateKey;
 import java.security.Security;
 import java.security.Signature;
 import java.security.SignatureException;
-import java.security.spec.EncodedKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
@@ -159,15 +156,10 @@ public class AsyncLatencyClient {
 
                         eng = Signature.getInstance("SHA256withECDSA", "SunEC");
 
-                        //KeyFactory kf = KeyFactory.getInstance("EC", "SunEC");
-                        //Base64.Decoder b64 = Base64.getDecoder();
-                        //PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(b64.decode(ThroughputLatencyClient.privKey));
-                        //eng.initSign(kf.generatePrivate(spec));
-
-                        KeyFactory keyFactory = KeyFactory.getInstance("EC");
-                        EncodedKeySpec privateKeySpec = new PKCS8EncodedKeySpec(org.apache.commons.codec.binary.Base64.decodeBase64(privKey));
-                        PrivateKey privateKey = keyFactory.generatePrivate(privateKeySpec);
-                        eng.initSign(privateKey);
+                        KeyFactory kf = KeyFactory.getInstance("EC", "SunEC");
+                        Base64.Decoder b64 = Base64.getDecoder();
+                        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(b64.decode(ThroughputLatencyClient.privKey));
+                        eng.initSign(kf.generatePrivate(spec));
 
                     }
                     eng.update(request);
