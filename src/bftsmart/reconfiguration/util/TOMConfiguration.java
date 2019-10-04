@@ -65,6 +65,7 @@ public class TOMConfiguration extends Configuration {
     private int numNettyWorkers;
     private boolean sameBatchSize;
     private String bindAddress;
+    private double sigProb;
     
     /** Creates a new instance of TOMConfiguration */
     public TOMConfiguration(int processId, KeyLoader loader) {
@@ -199,6 +200,14 @@ public class TOMConfiguration extends Configuration {
                 useSignatures = Integer.parseInt(s);
             }
 
+            sigProb = 1.00;
+            s = (String) configs.remove("system.communication.sigProb");
+            if (s == null) {
+                sigProb = 1.00;
+            } else {
+                sigProb = Double.parseDouble(s);
+            }
+            
             s = (String) configs.remove("system.totalordermulticast.state_transfer");
             if (s == null) {
                 stateTransferEnabled = false;
@@ -368,14 +377,12 @@ public class TOMConfiguration extends Configuration {
                 bindAddress = s;
             }
             
-            //Force this codebase to always deliver to the application a batch with the same size across all replicas
-            sameBatchSize = true;
-            //s = (String) configs.remove("system.samebatchsize");
-            //if (s != null) {
-            //        sameBatchSize = Boolean.parseBoolean(s);
-            //} else {
-            //        sameBatchSize = false;
-            //}
+            s = (String) configs.remove("system.samebatchsize");
+            if (s != null) {
+                    sameBatchSize = Boolean.parseBoolean(s);
+            } else {
+                    sameBatchSize = false;
+            }
             
         } catch (Exception e) {
             logger.error("Could not parse system configuration file",e);
@@ -480,6 +487,10 @@ public class TOMConfiguration extends Configuration {
         return useSignatures;
     }
 
+    public double getSigProb() {
+        return sigProb;
+    }
+    
     /**
      * Indicates if MACs should be used (1) or not (0) to authenticate client-server and server-server messages
      */

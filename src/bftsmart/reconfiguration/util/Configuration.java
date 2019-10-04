@@ -188,13 +188,12 @@ public class Configuration {
                 DH_G = new BigInteger(s);
             }
             
-            //force this codebase to only use a consensus proof comprised of signatures
-            //s = (String) configs.remove("system.totalordermulticast.prooftype");
-            //if(s == null && !s.equalsIgnoreCase("macvector") && !s.equalsIgnoreCase("signatures")){
+            s = (String) configs.remove("system.totalordermulticast.prooftype");
+            if(s == null || (s != null && !s.equalsIgnoreCase("macvector"))){
                 proofType = "signatures";
-            //}else{
-            //    proofType = s;
-            //}
+            }else{
+                proofType = s;
+            }
             
             if (keyLoader == null) {
                 
